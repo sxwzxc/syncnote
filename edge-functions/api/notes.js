@@ -4,6 +4,9 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
+// EdgeOne KV max value size is 25 MB
+const MAX_NOTE_BYTES = 25 * 1024 * 1024;
+
 function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -40,8 +43,14 @@ export async function onRequestPost({ request }) {
   const now = new Date().toISOString();
   const note = { id, title, content, createdAt: now, updatedAt: now };
 
+  // Enforce 25 MB KV size limit
+  const noteJson = JSON.stringify(note);
+  if (new TextEncoder().encode(noteJson).byteLength > MAX_NOTE_BYTES) {
+    return jsonResponse({ error: 'Note size exceeds the 25 MB KV storage limit.' }, 413);
+  }
+
   // Save the full note
-  await notesKV.put(`note_${id}`, JSON.stringify(note));
+  await notesKV.put(`note_${id}`, noteJson);
 
   // Update the index
   const rawIndex = await notesKV.get('notes_index');
