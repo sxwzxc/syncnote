@@ -1,0 +1,14 @@
+.DS_Store
+.env
+/node_modules/
+
+# React Router
+/.react-router/
+/build/
+
+# Tencent Cloud EdgeOne
+.env
+/.edgeone/
+!.edgeone/project.json
+.tef_dist/*
+  
