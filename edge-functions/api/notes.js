@@ -24,16 +24,26 @@ export async function onRequestOptions() {
 
 // GET /api/notes — list all notes (returns index with id, title, updatedAt)
 export async function onRequestGet({ env }) {
-  const raw = await env.notesKV.get('notes_index');
-  const index = raw ? JSON.parse(raw) : [];
-  return jsonResponse(index);
+  try {
+    const raw = await env.notesKV.get('notes_index');
+    const index = raw ? JSON.parse(raw) : [];
+    return jsonResponse(index);
+  } catch (err) {
+    return jsonResponse({ error: 'Failed to load notes: ' + (err && err.message ? err.message : String(err)) }, 500);
+  }
 }
 
 // POST /api/notes — create a new note
 export async function onRequestPost({ request, env }) {
-  const body = await request.json();
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return jsonResponse({ error: 'Invalid request body' }, 400);
+  }
+
   const title = (body.title || '').trim();
-  const content = (body.content || '').trim();
+  const content = body.content !== undefined ? body.content : '';
 
   if (!title) {
     return jsonResponse({ error: 'Title is required' }, 400);
@@ -49,14 +59,18 @@ export async function onRequestPost({ request, env }) {
     return jsonResponse({ error: 'Note size exceeds the 25 MB KV storage limit.' }, 413);
   }
 
-  // Save the full note
-  await env.notesKV.put(`note_${id}`, noteJson);
+  try {
+    // Save the full note
+    await env.notesKV.put(`note_${id}`, noteJson);
 
-  // Update the index
-  const rawIndex = await env.notesKV.get('notes_index');
-  const index = rawIndex ? JSON.parse(rawIndex) : [];
-  index.unshift({ id, title, updatedAt: now });
-  await env.notesKV.put('notes_index', JSON.stringify(index));
+    // Update the index
+    const rawIndex = await env.notesKV.get('notes_index');
+    const index = rawIndex ? JSON.parse(rawIndex) : [];
+    index.unshift({ id, title, updatedAt: now });
+    await env.notesKV.put('notes_index', JSON.stringify(index));
+  } catch (err) {
+    return jsonResponse({ error: 'Failed to save note: ' + (err && err.message ? err.message : String(err)) }, 500);
+  }
 
   return jsonResponse(note, 201);
 }
