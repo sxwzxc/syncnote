@@ -11,6 +11,7 @@ const Header = () => {
 
   const navigationItems = [
     { href: "/", label: "Home" },
+    { href: "/notes", label: "Notes" },
     { href: "/ssr", label: "SSR" },
     { href: "/csr", label: "CSR" },
     { href: "/prerender", label: "Pre-render" },

@@ -41,6 +41,7 @@ export function middleware(context) {
 export const config = {
   matcher: [
     '/',              // home page
+    '/notes',         // notes app
     '/ssr',           // SSR route
     '/csr',           // CSR route
     '/streaming',     // Streaming route
