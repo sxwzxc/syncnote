@@ -23,9 +23,9 @@ export async function onRequestOptions() {
 }
 
 // GET /api/notes/:id — get a single note
-export async function onRequestGet({ params }) {
+export async function onRequestGet({ params, env }) {
   const { id } = params;
-  const raw = await notesKV.get(`note_${id}`);
+  const raw = await env.notesKV.get(`note_${id}`);
   if (!raw) {
     return jsonResponse({ error: 'Note not found' }, 404);
   }
@@ -33,9 +33,9 @@ export async function onRequestGet({ params }) {
 }
 
 // PUT /api/notes/:id — update a note
-export async function onRequestPut({ request, params }) {
+export async function onRequestPut({ request, params, env }) {
   const { id } = params;
-  const raw = await notesKV.get(`note_${id}`);
+  const raw = await env.notesKV.get(`note_${id}`);
   if (!raw) {
     return jsonResponse({ error: 'Note not found' }, 404);
   }
@@ -59,36 +59,36 @@ export async function onRequestPut({ request, params }) {
   }
 
   // Save updated note
-  await notesKV.put(`note_${id}`, updatedJson);
+  await env.notesKV.put(`note_${id}`, updatedJson);
 
   // Update the index entry
-  const rawIndex = await notesKV.get('notes_index');
+  const rawIndex = await env.notesKV.get('notes_index');
   const index = rawIndex ? JSON.parse(rawIndex) : [];
   const idx = index.findIndex((n) => n.id === id);
   if (idx !== -1) {
     index[idx] = { id, title, updatedAt: now };
   }
-  await notesKV.put('notes_index', JSON.stringify(index));
+  await env.notesKV.put('notes_index', JSON.stringify(index));
 
   return jsonResponse(updated);
 }
 
 // DELETE /api/notes/:id — delete a note
-export async function onRequestDelete({ params }) {
+export async function onRequestDelete({ params, env }) {
   const { id } = params;
-  const raw = await notesKV.get(`note_${id}`);
+  const raw = await env.notesKV.get(`note_${id}`);
   if (!raw) {
     return jsonResponse({ error: 'Note not found' }, 404);
   }
 
   // Remove the note
-  await notesKV.delete(`note_${id}`);
+  await env.notesKV.delete(`note_${id}`);
 
   // Update the index
-  const rawIndex = await notesKV.get('notes_index');
+  const rawIndex = await env.notesKV.get('notes_index');
   const index = rawIndex ? JSON.parse(rawIndex) : [];
   const filtered = index.filter((n) => n.id !== id);
-  await notesKV.put('notes_index', JSON.stringify(filtered));
+  await env.notesKV.put('notes_index', JSON.stringify(filtered));
 
   return jsonResponse({ success: true });
 }

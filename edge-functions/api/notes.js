@@ -24,13 +24,13 @@ export async function onRequestOptions() {
 
 // GET /api/notes — list all notes (returns index with id, title, updatedAt)
 export async function onRequestGet({ env }) {
-  const raw = await notesKV.get('notes_index');
+  const raw = await env.notesKV.get('notes_index');
   const index = raw ? JSON.parse(raw) : [];
   return jsonResponse(index);
 }
 
 // POST /api/notes — create a new note
-export async function onRequestPost({ request }) {
+export async function onRequestPost({ request, env }) {
   const body = await request.json();
   const title = (body.title || '').trim();
   const content = (body.content || '').trim();
@@ -50,13 +50,13 @@ export async function onRequestPost({ request }) {
   }
 
   // Save the full note
-  await notesKV.put(`note_${id}`, noteJson);
+  await env.notesKV.put(`note_${id}`, noteJson);
 
   // Update the index
-  const rawIndex = await notesKV.get('notes_index');
+  const rawIndex = await env.notesKV.get('notes_index');
   const index = rawIndex ? JSON.parse(rawIndex) : [];
   index.unshift({ id, title, updatedAt: now });
-  await notesKV.put('notes_index', JSON.stringify(index));
+  await env.notesKV.put('notes_index', JSON.stringify(index));
 
   return jsonResponse(note, 201);
 }
