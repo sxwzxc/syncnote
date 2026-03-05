@@ -1,7 +1,20 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Button } from "~/components/ui/button";
 import { cn } from "~/lib/utils";
-import { PlusCircle, Trash2, Edit3, Save, X, FileText, Loader2, AlertTriangle, CheckCircle2 } from "lucide-react";
+import {
+  PlusCircle,
+  Trash2,
+  Save,
+  X,
+  FileText,
+  Loader2,
+  AlertTriangle,
+  CheckCircle2,
+  Lock,
+  Eye,
+  EyeOff,
+  LogOut,
+} from "lucide-react";
 
 export function meta() {
   return [
@@ -25,9 +38,12 @@ interface Note {
 }
 
 const API_BASE = "/api/notes";
-const POLL_INTERVAL_MS = 5000;   // poll every 5 seconds
+const AUTH_API = "/api/auth";
+const POLL_INTERVAL_MS = 3000;   // poll every 3 seconds
 const AUTO_SAVE_DELAY_MS = 2000; // debounce auto-save by 2 seconds
 const MAX_NOTE_BYTES = 25 * 1024 * 1024; // EdgeOne KV limit: 25 MB
+const AUTH_STORAGE_KEY = "syncnote_auth";
+const AUTH_MAX_DAYS = 30;
 
 type AutoSaveStatus = "idle" | "pending" | "saving" | "saved" | "error";
 
@@ -46,7 +62,141 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
+function isAuthValid(): boolean {
+  try {
+    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+    if (!raw) return false;
+    const { expiresAt } = JSON.parse(raw);
+    return Date.now() < expiresAt;
+  } catch {
+    return false;
+  }
+}
+
+function saveAuth() {
+  const expiresAt = Date.now() + AUTH_MAX_DAYS * 24 * 60 * 60 * 1000;
+  localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ expiresAt }));
+}
+
+function clearAuth() {
+  localStorage.removeItem(AUTH_STORAGE_KEY);
+}
+
+// ── Login Screen ─────────────────────────────────────────────────────────────
+function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setIsLoading(true);
+    try {
+      const res = await fetch(AUTH_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        saveAuth();
+        onSuccess();
+      } else {
+        setError(data.error || "Incorrect password. Please try again.");
+      }
+    } catch {
+      setError("Could not connect. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex items-center justify-center p-4">
+      <div className="w-full max-w-md">
+        {/* Card */}
+        <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8">
+          {/* Icon + Title */}
+          <div className="flex flex-col items-center mb-8">
+            <div className="w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center mb-4">
+              <FileText className="w-8 h-8 text-indigo-600" />
+            </div>
+            <h1 className="text-2xl font-bold text-gray-900">SyncNote</h1>
+            <p className="text-gray-500 text-sm mt-1">Enter your password to continue</p>
+          </div>
+
+          {/* Form */}
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="relative">
+              <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+                <Lock className="w-4 h-4 text-gray-400" />
+              </div>
+              <input
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Password"
+                autoFocus
+                className="w-full pl-10 pr-10 py-3 border border-gray-200 rounded-xl text-gray-900 bg-gray-50 focus:bg-white focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none transition-all text-sm"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute inset-y-0 right-3 flex items-center text-gray-400 hover:text-gray-600"
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+
+            {error && (
+              <div className="flex items-center gap-2 text-red-600 text-sm bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                {error}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={isLoading || !password}
+              className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white font-medium rounded-xl transition-colors flex items-center justify-center gap-2 text-sm"
+            >
+              {isLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                "Sign In"
+              )}
+            </button>
+          </form>
+
+          <p className="text-center text-xs text-gray-400 mt-6">
+            Session stays active for up to {AUTH_MAX_DAYS} days
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main Notes App ────────────────────────────────────────────────────────────
 export default function NotesPage() {
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    setIsAuthenticated(isAuthValid());
+  }, []);
+
+  if (isAuthenticated === null) return null; // hydration guard
+
+  if (!isAuthenticated) {
+    return <LoginScreen onSuccess={() => setIsAuthenticated(true)} />;
+  }
+
+  return <NotesApp onLogout={() => { clearAuth(); setIsAuthenticated(false); }} />;
+}
+
+function NotesApp({ onLogout }: { onLogout: () => void }) {
   const [notesList, setNotesList] = useState<NoteIndex[]>([]);
   const [selectedNote, setSelectedNote] = useState<Note | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -60,7 +210,6 @@ export default function NotesPage() {
   const [autoSaveStatus, setAutoSaveStatus] = useState<AutoSaveStatus>("idle");
   const [editConflict, setEditConflict] = useState(false);
 
-  // Refs for stable access inside timers / intervals (avoid stale closures)
   const selectedNoteRef = useRef<Note | null>(null);
   const isEditingRef = useRef(false);
   const isCreatingRef = useRef(false);
@@ -70,7 +219,6 @@ export default function NotesPage() {
   const lastSavedRef = useRef<{ title: string; content: string } | null>(null);
   const autoSaveStatusRef = useRef<AutoSaveStatus>("idle");
 
-  // Keep refs in sync
   useEffect(() => { selectedNoteRef.current = selectedNote; }, [selectedNote]);
   useEffect(() => { isEditingRef.current = isEditing; }, [isEditing]);
   useEffect(() => { isCreatingRef.current = isCreating; }, [isCreating]);
@@ -78,9 +226,7 @@ export default function NotesPage() {
   useEffect(() => { editContentRef.current = editContent; }, [editContent]);
   useEffect(() => { autoSaveStatusRef.current = autoSaveStatus; }, [autoSaveStatus]);
 
-  // ── Content size ──────────────────────────────────────────────────────────
   const noteSizeBytes = useMemo(() => {
-    // Model the full note object that will actually be stored in KV
     const approxNote = {
       id: selectedNote?.id ?? "00000000-0000-0000-0000-000000000000",
       title: editTitle,
@@ -93,7 +239,6 @@ export default function NotesPage() {
   const isOverLimit = noteSizeBytes > MAX_NOTE_BYTES;
   const isNearLimit = !isOverLimit && noteSizeBytes > MAX_NOTE_BYTES * 0.9;
 
-  // ── Load notes list ───────────────────────────────────────────────────────
   const loadNotes = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -113,7 +258,6 @@ export default function NotesPage() {
     loadNotes();
   }, [loadNotes]);
 
-  // ── Auto-save (debounced) ─────────────────────────────────────────────────
   const doAutoSave = useCallback(async () => {
     const note = selectedNoteRef.current;
     const title = editTitleRef.current;
@@ -122,7 +266,6 @@ export default function NotesPage() {
     if (!note || isCreatingRef.current) return;
     if (!title.trim()) return;
 
-    // Nothing changed since last save
     if (
       lastSavedRef.current?.title === title &&
       lastSavedRef.current?.content === content
@@ -161,7 +304,6 @@ export default function NotesPage() {
     }
   }, []);
 
-  // Trigger auto-save debounce on content change while editing an existing note
   useEffect(() => {
     if (!isEditingRef.current || isCreatingRef.current) return;
     if (!selectedNoteRef.current) return;
@@ -177,7 +319,6 @@ export default function NotesPage() {
     };
   }, [editTitle, editContent, isOverLimit, doAutoSave]);
 
-  // ── Polling for real-time sync ────────────────────────────────────────────
   useEffect(() => {
     const poll = async () => {
       try {
@@ -185,7 +326,6 @@ export default function NotesPage() {
         if (!res.ok) return;
         const data: NoteIndex[] = await res.json();
 
-        // Always refresh the sidebar list
         setNotesList(data);
 
         const currentNote = selectedNoteRef.current;
@@ -197,14 +337,11 @@ export default function NotesPage() {
         if (!remoteEntry) return;
 
         const remotelyUpdated = remoteEntry.updatedAt !== currentNote.updatedAt;
-
         if (!remotelyUpdated) return;
 
         if (currentlyEditing) {
-          // Don't overwrite in-progress edits — show a conflict warning instead
           setEditConflict(true);
         } else {
-          // Silently reload the note content
           const noteRes = await fetch(`${API_BASE}/${currentNote.id}`);
           if (noteRes.ok) {
             const updated: Note = await noteRes.json();
@@ -219,15 +356,13 @@ export default function NotesPage() {
 
     const intervalId = setInterval(poll, POLL_INTERVAL_MS);
     return () => clearInterval(intervalId);
-  }, []); // intentionally empty — uses refs for mutable state
+  }, []);
 
-  // ── Handlers ─────────────────────────────────────────────────────────────
   const handleSelectNote = async (id: string) => {
     if (autoSaveTimerRef.current) {
       clearTimeout(autoSaveTimerRef.current);
       autoSaveTimerRef.current = null;
     }
-    setIsEditing(false);
     setIsCreating(false);
     setAutoSaveStatus("idle");
     setEditConflict(false);
@@ -241,6 +376,8 @@ export default function NotesPage() {
       setEditTitle(note.title);
       setEditContent(note.content);
       lastSavedRef.current = { title: note.title, content: note.content };
+      // Default to edit mode
+      setIsEditing(true);
     } catch {
       setError("Could not load the selected note.");
     }
@@ -261,17 +398,6 @@ export default function NotesPage() {
     setEditConflict(false);
     setError(null);
     lastSavedRef.current = null;
-  };
-
-  const handleEditNote = () => {
-    if (!selectedNote) return;
-    setEditTitle(selectedNote.title);
-    setEditContent(selectedNote.content);
-    lastSavedRef.current = { title: selectedNote.title, content: selectedNote.content };
-    setIsEditing(true);
-    setIsCreating(false);
-    setAutoSaveStatus("idle");
-    setEditConflict(false);
   };
 
   const handleCancelEdit = () => {
@@ -319,7 +445,7 @@ export default function NotesPage() {
         setSelectedNote(newNote);
         selectedNoteRef.current = newNote;
         lastSavedRef.current = { title: editTitle, content: editContent };
-        setIsEditing(false);
+        setIsEditing(true);
         setIsCreating(false);
         setAutoSaveStatus("idle");
         await loadNotes();
@@ -337,7 +463,6 @@ export default function NotesPage() {
         setSelectedNote(updated);
         selectedNoteRef.current = updated;
         lastSavedRef.current = { title: editTitle, content: editContent };
-        setIsEditing(false);
         setEditConflict(false);
         setAutoSaveStatus("idle");
         await loadNotes();
@@ -377,9 +502,8 @@ export default function NotesPage() {
     }
   };
 
-  // ── Size indicator helpers ────────────────────────────────────────────────
   const sizeColor = isOverLimit
-    ? "text-red-600"
+    ? "text-red-500"
     : isNearLimit
     ? "text-orange-500"
     : noteSizeBytes > MAX_NOTE_BYTES * 0.7
@@ -387,36 +511,50 @@ export default function NotesPage() {
     : "text-gray-400";
 
   return (
-    <div className="flex h-screen bg-white overflow-hidden">
+    <div className="flex h-screen overflow-hidden" style={{ background: "var(--color-gray-50)" }}>
       {/* Sidebar */}
-      <aside className="w-72 flex-shrink-0 border-r border-gray-200 flex flex-col bg-gray-50">
+      <aside className="w-72 flex-shrink-0 flex flex-col bg-white border-r border-gray-100 shadow-sm">
         {/* Sidebar header */}
-        <div className="flex items-center justify-between px-4 py-4 border-b border-gray-200">
-          <div className="flex items-center gap-2">
-            <FileText className="w-5 h-5 text-primary" />
-            <span className="font-semibold text-gray-800 text-lg">SyncNote</span>
+        <div className="flex items-center justify-between px-4 py-4 border-b border-gray-100">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center">
+              <FileText className="w-4 h-4 text-indigo-600" />
+            </div>
+            <span className="font-semibold text-gray-900 text-base">SyncNote</span>
           </div>
-          <Button
-            size="sm"
-            onClick={handleNewNote}
-            className="bg-primary hover:bg-primary-dark text-white cursor-pointer"
-          >
-            <PlusCircle className="w-4 h-4 mr-1" />
-            New
-          </Button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={onLogout}
+              title="Sign out"
+              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+            <Button
+              size="sm"
+              onClick={handleNewNote}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer h-8 px-2.5 text-xs"
+            >
+              <PlusCircle className="w-3.5 h-3.5 mr-1" />
+              New
+            </Button>
+          </div>
         </div>
 
         {/* Notes list */}
         <div className="flex-1 overflow-y-auto py-2">
           {isLoading ? (
             <div className="flex items-center justify-center py-12 text-gray-400">
-              <Loader2 className="w-5 h-5 animate-spin mr-2" />
-              Loading…
+              <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              <span className="text-sm">Loading…</span>
             </div>
           ) : notesList.length === 0 ? (
-            <div className="px-4 py-8 text-center text-gray-400 text-sm">
-              <FileText className="w-8 h-8 mx-auto mb-2 opacity-40" />
-              No notes yet. Create your first note!
+            <div className="px-4 py-10 text-center">
+              <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center mx-auto mb-3">
+                <FileText className="w-6 h-6 text-gray-300" />
+              </div>
+              <p className="text-gray-400 text-sm font-medium">No notes yet</p>
+              <p className="text-gray-300 text-xs mt-1">Create your first note!</p>
             </div>
           ) : (
             notesList.map((n) => (
@@ -424,11 +562,13 @@ export default function NotesPage() {
                 key={n.id}
                 onClick={() => handleSelectNote(n.id)}
                 className={cn(
-                  "w-full text-left px-4 py-3 border-b border-gray-100 hover:bg-white transition-colors",
-                  selectedNote?.id === n.id && "bg-white border-l-2 border-l-primary"
+                  "w-full text-left px-4 py-3 mx-0 transition-all rounded-none border-l-2 border-l-transparent",
+                  selectedNote?.id === n.id
+                    ? "bg-indigo-50 border-l-indigo-500 text-indigo-900"
+                    : "hover:bg-gray-50 text-gray-700"
                 )}
               >
-                <p className="font-medium text-gray-800 truncate text-sm">{n.title}</p>
+                <p className="font-medium truncate text-sm leading-snug">{n.title}</p>
                 <p className="text-xs text-gray-400 mt-0.5">{formatDate(n.updatedAt)}</p>
               </button>
             ))
@@ -437,12 +577,15 @@ export default function NotesPage() {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className="flex-1 flex flex-col overflow-hidden bg-white">
         {/* Error banner */}
         {error && (
-          <div className="bg-red-50 border-b border-red-200 px-6 py-3 flex items-center justify-between">
-            <span className="text-red-700 text-sm">{error}</span>
-            <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600">
+          <div className="bg-red-50 border-b border-red-100 px-6 py-2.5 flex items-center justify-between">
+            <span className="text-red-600 text-sm flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+              {error}
+            </span>
+            <button onClick={() => setError(null)} className="text-red-300 hover:text-red-500 ml-4">
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -453,24 +596,23 @@ export default function NotesPage() {
           <div className="flex flex-col flex-1 overflow-hidden">
             {/* Conflict warning */}
             {editConflict && (
-              <div className="bg-yellow-50 border-b border-yellow-200 px-6 py-2 flex items-center justify-between">
-                <span className="text-yellow-800 text-xs flex items-center gap-1.5">
+              <div className="bg-amber-50 border-b border-amber-100 px-6 py-2 flex items-center justify-between">
+                <span className="text-amber-800 text-xs flex items-center gap-1.5">
                   <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
                   This note was updated from another device. Saving will overwrite those changes.
                 </span>
-                <button onClick={() => setEditConflict(false)} className="text-yellow-500 hover:text-yellow-700 ml-4">
+                <button onClick={() => setEditConflict(false)} className="text-amber-400 hover:text-amber-600 ml-4">
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>
             )}
 
             {/* Editor toolbar */}
-            <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 bg-white">
+            <div className="flex items-center justify-between px-6 py-3 border-b border-gray-100">
               <div className="flex items-center gap-3">
-                <span className="text-sm font-medium text-gray-600">
+                <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
                   {isCreating ? "New Note" : "Editing"}
                 </span>
-                {/* Auto-save status */}
                 {!isCreating && (
                   <span className="text-xs flex items-center gap-1">
                     {autoSaveStatus === "pending" && (
@@ -479,13 +621,13 @@ export default function NotesPage() {
                     {autoSaveStatus === "saving" && (
                       <>
                         <Loader2 className="w-3 h-3 animate-spin text-gray-400" />
-                        <span className="text-gray-400">Auto-saving…</span>
+                        <span className="text-gray-400">Saving…</span>
                       </>
                     )}
                     {autoSaveStatus === "saved" && (
                       <>
-                        <CheckCircle2 className="w-3 h-3 text-green-500" />
-                        <span className="text-green-600">Saved</span>
+                        <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                        <span className="text-emerald-600">Saved</span>
                       </>
                     )}
                     {autoSaveStatus === "error" && (
@@ -499,21 +641,37 @@ export default function NotesPage() {
                   size="sm"
                   variant="outline"
                   onClick={handleCancelEdit}
-                  className="cursor-pointer"
+                  className="cursor-pointer h-8 px-3 text-xs border-gray-200 text-gray-600 hover:bg-gray-50"
                 >
-                  <X className="w-4 h-4 mr-1" />
+                  <X className="w-3.5 h-3.5 mr-1" />
                   Cancel
                 </Button>
+                {selectedNote && !isCreating && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleDelete}
+                    disabled={isDeleting}
+                    className="cursor-pointer h-8 px-3 text-xs border-red-200 text-red-500 hover:bg-red-50"
+                  >
+                    {isDeleting ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-3.5 h-3.5 mr-1" />
+                    )}
+                    Delete
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   onClick={handleSave}
                   disabled={isSaving || isOverLimit}
-                  className="bg-primary hover:bg-primary-dark text-white cursor-pointer"
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer h-8 px-3 text-xs"
                 >
                   {isSaving ? (
-                    <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                    <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
                   ) : (
-                    <Save className="w-4 h-4 mr-1" />
+                    <Save className="w-3.5 h-3.5 mr-1" />
                   )}
                   Save
                 </Button>
@@ -521,7 +679,7 @@ export default function NotesPage() {
             </div>
 
             {/* Title input */}
-            <div className="px-6 pt-6 pb-2">
+            <div className="px-8 pt-8 pb-2">
               <input
                 type="text"
                 value={editTitle}
@@ -531,26 +689,27 @@ export default function NotesPage() {
               />
             </div>
 
+            {/* Divider */}
+            <div className="mx-8 border-b border-gray-100" />
+
             {/* Content textarea */}
-            <div className="flex-1 px-6 pb-2 overflow-hidden flex flex-col">
+            <div className="flex-1 px-8 py-4 overflow-hidden flex flex-col">
               <textarea
                 value={editContent}
                 onChange={(e) => setEditContent(e.target.value)}
                 placeholder="Start writing your note…"
-                className="flex-1 w-full text-gray-700 bg-transparent border-none outline-none resize-none placeholder-gray-300 text-base leading-relaxed"
+                className="flex-1 w-full text-gray-700 bg-transparent border-none outline-none resize-none placeholder-gray-300 text-sm leading-relaxed"
               />
             </div>
 
             {/* Size indicator */}
-            <div className="px-6 pb-3 flex items-center justify-end gap-1.5">
-              {isOverLimit && (
-                <AlertTriangle className="w-3.5 h-3.5 text-red-600" />
-              )}
+            <div className="px-8 pb-4 flex items-center justify-end gap-1.5">
+              {isOverLimit && <AlertTriangle className="w-3.5 h-3.5 text-red-500" />}
               <span className={cn("text-xs", sizeColor)}>
                 {formatBytes(noteSizeBytes)} / 25 MB
               </span>
               {isOverLimit && (
-                <span className="text-xs text-red-600">— exceeds storage limit</span>
+                <span className="text-xs text-red-500">— exceeds storage limit</span>
               )}
               {isNearLimit && !isOverLimit && (
                 <span className="text-xs text-orange-500">— approaching limit</span>
@@ -558,46 +717,32 @@ export default function NotesPage() {
             </div>
           </div>
         ) : selectedNote ? (
-          /* Note view */
+          /* Note view (read-only) - shouldn't normally appear since we default to editing */
           <div className="flex flex-col flex-1 overflow-hidden">
-            {/* Note toolbar */}
-            <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 bg-white">
+            <div className="flex items-center justify-between px-6 py-3 border-b border-gray-100">
               <span className="text-xs text-gray-400">
                 Last updated {formatDate(selectedNote.updatedAt)}
               </span>
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleEditNote}
-                  className="cursor-pointer"
-                >
-                  <Edit3 className="w-4 h-4 mr-1" />
-                  Edit
-                </Button>
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  onClick={handleDelete}
-                  disabled={isDeleting}
-                  className="cursor-pointer"
-                >
-                  {isDeleting ? (
-                    <Loader2 className="w-4 h-4 mr-1 animate-spin" />
-                  ) : (
-                    <Trash2 className="w-4 h-4 mr-1" />
-                  )}
-                  Delete
-                </Button>
-              </div>
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className="cursor-pointer h-8 px-3 text-xs"
+              >
+                {isDeleting ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="w-3.5 h-3.5 mr-1" />
+                )}
+                Delete
+              </Button>
             </div>
-
-            {/* Note content */}
-            <div className="flex-1 overflow-y-auto px-6 py-6">
+            <div className="flex-1 overflow-y-auto px-8 py-8">
               <h1 className="text-2xl font-bold text-gray-900 mb-4">{selectedNote.title}</h1>
-              <div className="text-gray-700 text-base leading-relaxed whitespace-pre-wrap">
+              <div className="text-gray-600 text-sm leading-relaxed whitespace-pre-wrap">
                 {selectedNote.content || (
-                  <span className="text-gray-300 italic">No content yet. Click Edit to add content.</span>
+                  <span className="text-gray-300 italic">No content yet.</span>
                 )}
               </div>
             </div>
@@ -605,18 +750,20 @@ export default function NotesPage() {
         ) : (
           /* Empty state */
           <div className="flex-1 flex flex-col items-center justify-center text-center px-4">
-            <FileText className="w-16 h-16 text-gray-200 mb-4" />
-            <h2 className="text-xl font-semibold text-gray-400 mb-2">Select a note to read</h2>
-            <p className="text-gray-300 text-sm mb-6">
-              Choose a note from the sidebar, or create a new one.
+            <div className="w-20 h-20 bg-indigo-50 rounded-2xl flex items-center justify-center mb-5">
+              <FileText className="w-10 h-10 text-indigo-200" />
+            </div>
+            <h2 className="text-lg font-semibold text-gray-700 mb-2">No note selected</h2>
+            <p className="text-gray-400 text-sm mb-6 max-w-xs">
+              Choose a note from the sidebar, or create a new one to get started.
             </p>
-            <Button
+            <button
               onClick={handleNewNote}
-              className="bg-primary hover:bg-primary-dark text-white cursor-pointer"
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-xl transition-colors"
             >
-              <PlusCircle className="w-4 h-4 mr-2" />
+              <PlusCircle className="w-4 h-4" />
               Create your first note
-            </Button>
+            </button>
           </div>
         )}
       </main>
