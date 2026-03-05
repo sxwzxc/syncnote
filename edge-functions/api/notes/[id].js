@@ -25,70 +25,89 @@ export async function onRequestOptions() {
 // GET /api/notes/:id — get a single note
 export async function onRequestGet({ params, env }) {
   const { id } = params;
-  const raw = await env.notesKV.get(`note_${id}`);
-  if (!raw) {
-    return jsonResponse({ error: 'Note not found' }, 404);
+  try {
+    const raw = await env.notesKV.get(`note_${id}`);
+    if (!raw) {
+      return jsonResponse({ error: 'Note not found' }, 404);
+    }
+    return jsonResponse(JSON.parse(raw));
+  } catch (err) {
+    return jsonResponse({ error: 'Failed to load note: ' + (err && err.message ? err.message : String(err)) }, 500);
   }
-  return jsonResponse(JSON.parse(raw));
 }
 
 // PUT /api/notes/:id — update a note
 export async function onRequestPut({ request, params, env }) {
   const { id } = params;
-  const raw = await env.notesKV.get(`note_${id}`);
-  if (!raw) {
-    return jsonResponse({ error: 'Note not found' }, 404);
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return jsonResponse({ error: 'Invalid request body' }, 400);
   }
 
-  const existing = JSON.parse(raw);
-  const body = await request.json();
-  const title = (body.title !== undefined ? body.title : existing.title).trim();
-  const content = body.content !== undefined ? body.content : existing.content;
+  try {
+    const raw = await env.notesKV.get(`note_${id}`);
+    if (!raw) {
+      return jsonResponse({ error: 'Note not found' }, 404);
+    }
 
-  if (!title) {
-    return jsonResponse({ error: 'Title is required' }, 400);
+    const existing = JSON.parse(raw);
+    const title = (body.title !== undefined ? body.title : existing.title).trim();
+    const content = body.content !== undefined ? body.content : existing.content;
+
+    if (!title) {
+      return jsonResponse({ error: 'Title is required' }, 400);
+    }
+
+    const now = new Date().toISOString();
+    const updated = { ...existing, title, content, updatedAt: now };
+
+    // Enforce 25 MB KV size limit
+    const updatedJson = JSON.stringify(updated);
+    if (new TextEncoder().encode(updatedJson).byteLength > MAX_NOTE_BYTES) {
+      return jsonResponse({ error: 'Note size exceeds the 25 MB KV storage limit.' }, 413);
+    }
+
+    // Save updated note
+    await env.notesKV.put(`note_${id}`, updatedJson);
+
+    // Update the index entry
+    const rawIndex = await env.notesKV.get('notes_index');
+    const index = rawIndex ? JSON.parse(rawIndex) : [];
+    const idx = index.findIndex((n) => n.id === id);
+    if (idx !== -1) {
+      index[idx] = { id, title, updatedAt: now };
+    }
+    await env.notesKV.put('notes_index', JSON.stringify(index));
+
+    return jsonResponse(updated);
+  } catch (err) {
+    return jsonResponse({ error: 'Failed to update note: ' + (err && err.message ? err.message : String(err)) }, 500);
   }
-
-  const now = new Date().toISOString();
-  const updated = { ...existing, title, content, updatedAt: now };
-
-  // Enforce 25 MB KV size limit
-  const updatedJson = JSON.stringify(updated);
-  if (new TextEncoder().encode(updatedJson).byteLength > MAX_NOTE_BYTES) {
-    return jsonResponse({ error: 'Note size exceeds the 25 MB KV storage limit.' }, 413);
-  }
-
-  // Save updated note
-  await env.notesKV.put(`note_${id}`, updatedJson);
-
-  // Update the index entry
-  const rawIndex = await env.notesKV.get('notes_index');
-  const index = rawIndex ? JSON.parse(rawIndex) : [];
-  const idx = index.findIndex((n) => n.id === id);
-  if (idx !== -1) {
-    index[idx] = { id, title, updatedAt: now };
-  }
-  await env.notesKV.put('notes_index', JSON.stringify(index));
-
-  return jsonResponse(updated);
 }
 
 // DELETE /api/notes/:id — delete a note
 export async function onRequestDelete({ params, env }) {
   const { id } = params;
-  const raw = await env.notesKV.get(`note_${id}`);
-  if (!raw) {
-    return jsonResponse({ error: 'Note not found' }, 404);
+  try {
+    const raw = await env.notesKV.get(`note_${id}`);
+    if (!raw) {
+      return jsonResponse({ error: 'Note not found' }, 404);
+    }
+
+    // Remove the note
+    await env.notesKV.delete(`note_${id}`);
+
+    // Update the index
+    const rawIndex = await env.notesKV.get('notes_index');
+    const index = rawIndex ? JSON.parse(rawIndex) : [];
+    const filtered = index.filter((n) => n.id !== id);
+    await env.notesKV.put('notes_index', JSON.stringify(filtered));
+
+    return jsonResponse({ success: true });
+  } catch (err) {
+    return jsonResponse({ error: 'Failed to delete note: ' + (err && err.message ? err.message : String(err)) }, 500);
   }
-
-  // Remove the note
-  await env.notesKV.delete(`note_${id}`);
-
-  // Update the index
-  const rawIndex = await env.notesKV.get('notes_index');
-  const index = rawIndex ? JSON.parse(rawIndex) : [];
-  const filtered = index.filter((n) => n.id !== id);
-  await env.notesKV.put('notes_index', JSON.stringify(filtered));
-
-  return jsonResponse({ success: true });
 }
