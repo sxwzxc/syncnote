@@ -19,6 +19,7 @@ import {
   Sun,
   Moon,
   Languages,
+  RefreshCw,
 } from "lucide-react";
 
 export function meta() {
@@ -56,8 +57,8 @@ type AutoSaveStatus = "idle" | "pending" | "saving" | "saved" | "error";
 // ── Constants ─────────────────────────────────────────────────────────────────
 const API_BASE = "/api/notes";
 const AUTH_API = "/api/auth";
-const POLL_INTERVAL_MS = 2000;   // poll every 2 seconds for near-real-time sync
-const AUTO_SAVE_DELAY_MS = 1500; // debounce auto-save
+const POLL_INTERVAL_MS = 1500;  // poll every 1.5 seconds for near-real-time sync
+const AUTO_SAVE_DELAY_MS = 800; // debounce auto-save
 const MAX_NOTE_BYTES = 25 * 1024 * 1024;
 const AUTH_STORAGE_KEY = "syncnote_auth";
 const LANG_STORAGE_KEY = "syncnote_lang";
@@ -99,6 +100,8 @@ type Translations = {
   saveError: string;
   deleteError: string;
   connectError: string;
+  liveSync: string;
+  remoteUpdated: string;
   incorrectPassword: string;
   addImage: string;
   images: string;
@@ -144,6 +147,8 @@ const translations: Record<Lang, Translations> = {
     saveError: "Could not save the note. Please try again.",
     deleteError: "Could not delete the note. Please try again.",
     connectError: "Could not connect. Please try again.",
+    liveSync: "Live sync",
+    remoteUpdated: "Updated from another device",
     incorrectPassword: "Incorrect password. Please try again.",
     addImage: "Add image",
     images: "Images",
@@ -185,6 +190,8 @@ const translations: Record<Lang, Translations> = {
     saveError: "无法保存笔记，请重试。",
     deleteError: "无法删除笔记，请重试。",
     connectError: "无法连接，请重试。",
+    liveSync: "实时同步",
+    remoteUpdated: "已同步其他设备的更改",
     incorrectPassword: "密码错误，请重试。",
     addImage: "添加图片",
     images: "图片",
@@ -434,6 +441,7 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
   const [error, setError] = useState<string | null>(null);
   const [autoSaveStatus, setAutoSaveStatus] = useState<AutoSaveStatus>("idle");
   const [mobileShowEditor, setMobileShowEditor] = useState(false);
+  const [remoteSyncStatus, setRemoteSyncStatus] = useState<"idle" | "updated">("idle");
 
   // Refs to access latest state in async callbacks
   const selectedNoteRef = useRef<Note | null>(null);
@@ -445,6 +453,7 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedRef = useRef<{ title: string; content: string; images: NoteImage[] } | null>(null);
   const autoSaveStatusRef = useRef<AutoSaveStatus>("idle");
+  const remoteSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => { selectedNoteRef.current = selectedNote; }, [selectedNote]);
   useEffect(() => { isEditingRef.current = isEditing; }, [isEditing]);
@@ -582,6 +591,11 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
         setSelectedNote(updated);
         selectedNoteRef.current = updated;
 
+        // Signal remote update to the UI
+        if (remoteSyncTimerRef.current) clearTimeout(remoteSyncTimerRef.current);
+        setRemoteSyncStatus("updated");
+        remoteSyncTimerRef.current = setTimeout(() => setRemoteSyncStatus("idle"), 3000);
+
         // Also update the edit fields if in editing mode (e.g. viewing on another device made a change)
         if (isEditingRef.current) {
           setEditTitle(updated.title);
@@ -663,6 +677,7 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
     }
     setIsCreating(false);
     setAutoSaveStatus("idle");
+    setRemoteSyncStatus("idle");
     setError(null);
     try {
       const res = await fetch(`${API_BASE}/${id}`);
@@ -698,6 +713,7 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
     setIsEditing(true);
     setIsCreating(true);
     setAutoSaveStatus("idle");
+    setRemoteSyncStatus("idle");
     setError(null);
     lastSavedRef.current = null;
     setMobileShowEditor(true);
@@ -831,6 +847,7 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
               <FileText className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
             </div>
             <span className="font-semibold text-gray-900 dark:text-slate-100 text-base">SyncNote</span>
+            <span title={t.liveSync} className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
           </div>
           <div className="flex items-center gap-0.5">
             {/* Language toggle */}
@@ -956,6 +973,12 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
                     )}
                     {autoSaveStatus === "error" && (
                       <span className="text-red-500 dark:text-red-400 hidden md:inline">{t.autoSaveFailed}</span>
+                    )}
+                    {autoSaveStatus === "idle" && remoteSyncStatus === "updated" && (
+                      <>
+                        <RefreshCw className="w-3 h-3 text-blue-500" />
+                        <span className="text-blue-600 dark:text-blue-400 hidden md:inline">{t.remoteUpdated}</span>
+                      </>
                     )}
                   </span>
                 )}
