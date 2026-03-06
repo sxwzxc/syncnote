@@ -23,12 +23,13 @@ export async function onRequestOptions() {
 }
 
 // GET /api/notes — list all notes (returns index with id, title, updatedAt)
-export async function onRequestGet({ env }) {
-  if (!env.notesKV) {
+export async function onRequestGet() {
+  // In EdgeOne Pages, KV bindings are injected as global variables (not via env)
+  if (typeof notesKV === 'undefined') {
     return jsonResponse({ error: 'KV storage binding (notesKV) is not configured. Please bind notesKV in EdgeOne Pages settings.' }, 503);
   }
   try {
-    const raw = await env.notesKV.get('notes_index');
+    const raw = await notesKV.get('notes_index');
     const index = raw ? JSON.parse(raw) : [];
     return jsonResponse(index);
   } catch (err) {
@@ -37,8 +38,9 @@ export async function onRequestGet({ env }) {
 }
 
 // POST /api/notes — create a new note
-export async function onRequestPost({ request, env }) {
-  if (!env.notesKV) {
+export async function onRequestPost({ request }) {
+  // In EdgeOne Pages, KV bindings are injected as global variables (not via env)
+  if (typeof notesKV === 'undefined') {
     return jsonResponse({ error: 'KV storage binding (notesKV) is not configured. Please bind notesKV in EdgeOne Pages settings.' }, 503);
   }
   let body;
@@ -67,13 +69,13 @@ export async function onRequestPost({ request, env }) {
 
   try {
     // Save the full note
-    await env.notesKV.put(`note_${id}`, noteJson);
+    await notesKV.put(`note_${id}`, noteJson);
 
     // Update the index
-    const rawIndex = await env.notesKV.get('notes_index');
+    const rawIndex = await notesKV.get('notes_index');
     const index = rawIndex ? JSON.parse(rawIndex) : [];
     index.unshift({ id, title, updatedAt: now });
-    await env.notesKV.put('notes_index', JSON.stringify(index));
+    await notesKV.put('notes_index', JSON.stringify(index));
   } catch (err) {
     return jsonResponse({ error: 'Failed to save note: ' + (err && err.message ? err.message : String(err)) }, 500);
   }

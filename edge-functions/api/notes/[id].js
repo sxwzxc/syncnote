@@ -23,13 +23,14 @@ export async function onRequestOptions() {
 }
 
 // GET /api/notes/:id — get a single note
-export async function onRequestGet({ params, env }) {
-  if (!env.notesKV) {
+export async function onRequestGet({ params }) {
+  // In EdgeOne Pages, KV bindings are injected as global variables (not via env)
+  if (typeof notesKV === 'undefined') {
     return jsonResponse({ error: 'KV storage binding (notesKV) is not configured. Please bind notesKV in EdgeOne Pages settings.' }, 503);
   }
   const { id } = params;
   try {
-    const raw = await env.notesKV.get(`note_${id}`);
+    const raw = await notesKV.get(`note_${id}`);
     if (!raw) {
       return jsonResponse({ error: 'Note not found' }, 404);
     }
@@ -40,8 +41,9 @@ export async function onRequestGet({ params, env }) {
 }
 
 // PUT /api/notes/:id — update a note
-export async function onRequestPut({ request, params, env }) {
-  if (!env.notesKV) {
+export async function onRequestPut({ request, params }) {
+  // In EdgeOne Pages, KV bindings are injected as global variables (not via env)
+  if (typeof notesKV === 'undefined') {
     return jsonResponse({ error: 'KV storage binding (notesKV) is not configured. Please bind notesKV in EdgeOne Pages settings.' }, 503);
   }
   const { id } = params;
@@ -54,7 +56,7 @@ export async function onRequestPut({ request, params, env }) {
   }
 
   try {
-    const raw = await env.notesKV.get(`note_${id}`);
+    const raw = await notesKV.get(`note_${id}`);
     if (!raw) {
       return jsonResponse({ error: 'Note not found' }, 404);
     }
@@ -77,16 +79,16 @@ export async function onRequestPut({ request, params, env }) {
     }
 
     // Save updated note
-    await env.notesKV.put(`note_${id}`, updatedJson);
+    await notesKV.put(`note_${id}`, updatedJson);
 
     // Update the index entry
-    const rawIndex = await env.notesKV.get('notes_index');
+    const rawIndex = await notesKV.get('notes_index');
     const index = rawIndex ? JSON.parse(rawIndex) : [];
     const idx = index.findIndex((n) => n.id === id);
     if (idx !== -1) {
       index[idx] = { id, title, updatedAt: now };
     }
-    await env.notesKV.put('notes_index', JSON.stringify(index));
+    await notesKV.put('notes_index', JSON.stringify(index));
 
     return jsonResponse(updated);
   } catch (err) {
@@ -95,25 +97,26 @@ export async function onRequestPut({ request, params, env }) {
 }
 
 // DELETE /api/notes/:id — delete a note
-export async function onRequestDelete({ params, env }) {
-  if (!env.notesKV) {
+export async function onRequestDelete({ params }) {
+  // In EdgeOne Pages, KV bindings are injected as global variables (not via env)
+  if (typeof notesKV === 'undefined') {
     return jsonResponse({ error: 'KV storage binding (notesKV) is not configured. Please bind notesKV in EdgeOne Pages settings.' }, 503);
   }
   const { id } = params;
   try {
-    const raw = await env.notesKV.get(`note_${id}`);
+    const raw = await notesKV.get(`note_${id}`);
     if (!raw) {
       return jsonResponse({ error: 'Note not found' }, 404);
     }
 
     // Remove the note
-    await env.notesKV.delete(`note_${id}`);
+    await notesKV.delete(`note_${id}`);
 
     // Update the index
-    const rawIndex = await env.notesKV.get('notes_index');
+    const rawIndex = await notesKV.get('notes_index');
     const index = rawIndex ? JSON.parse(rawIndex) : [];
     const filtered = index.filter((n) => n.id !== id);
-    await env.notesKV.put('notes_index', JSON.stringify(filtered));
+    await notesKV.put('notes_index', JSON.stringify(filtered));
 
     return jsonResponse({ success: true });
   } catch (err) {
