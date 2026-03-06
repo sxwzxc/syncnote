@@ -63,7 +63,6 @@ const MAX_NOTE_BYTES = 25 * 1024 * 1024;
 const AUTH_STORAGE_KEY = "syncnote_auth";
 const LANG_STORAGE_KEY = "syncnote_lang";
 const THEME_STORAGE_KEY = "syncnote_theme";
-const SELECTED_NOTE_KEY = "syncnote_selected_note_id";
 const AUTH_MAX_DAYS = 30;
 const WS_HEARTBEAT_MS = 3000;
 const WS_RECONNECT_BASE_MS = 1000;
@@ -478,7 +477,6 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
   const imagesPanelHeightRef = useRef(112);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleSaveRef = useRef<() => Promise<void>>(async () => {});
-  const autoLoadAttemptedRef = useRef(false);
 
   useEffect(() => { selectedNoteRef.current = selectedNote; }, [selectedNote]);
   useEffect(() => { isEditingRef.current = isEditing; }, [isEditing]);
@@ -556,45 +554,6 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
   }, []);
 
   useEffect(() => { loadNotes(); }, [loadNotes]);
-
-  // ── Auto-load last selected note on mount ────────────────────────────────────
-  useEffect(() => {
-    // Only attempt auto-load once, when notes list is first loaded
-    if (autoLoadAttemptedRef.current) return;
-    if (notesList.length === 0) return; // Wait until notes are loaded
-    
-    autoLoadAttemptedRef.current = true;
-    const savedNoteId = localStorage.getItem(SELECTED_NOTE_KEY);
-    if (savedNoteId && notesList.some((n) => n.id === savedNoteId)) {
-      // Safely load the note without depending on handleSelectNote callback
-      (async () => {
-        try {
-          const res = await fetch(`${API_BASE}/${savedNoteId}`);
-          if (!res.ok) return;
-          const note: Note = await res.json();
-          setSelectedNote(note);
-          selectedNoteRef.current = note;
-          setEditTitle(note.title);
-          setEditContent(note.content);
-          setEditImages(note.images ?? []);
-          lastSavedRef.current = {
-            title: note.title,
-            content: note.content,
-            images: note.images ?? [],
-          };
-          setIsEditing(true);
-          setMobileShowEditor(true);
-          wsSubscribedNoteIdRef.current = note.id;
-          const _wsS = wsRef.current;
-          if (_wsS && _wsS.readyState === WebSocket.OPEN) {
-            try { _wsS.send(JSON.stringify({ type: 'subscribe', noteId: note.id })); } catch {}
-          }
-        } catch {
-          // Silently ignore auto-load errors
-        }
-      })();
-    }
-  }, [notesList]);
 
   // ── Auto-save ────────────────────────────────────────────────────────────────
   const doAutoSave = useCallback(async () => {
@@ -929,7 +888,7 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
   }, []);
 
   // ── Note operations ───────────────────────────────────────────────────────────
-  const handleSelectNote = useCallback(async (id: string) => {
+  const handleSelectNote = async (id: string) => {
     if (autoSaveTimerRef.current) {
       clearTimeout(autoSaveTimerRef.current);
       autoSaveTimerRef.current = null;
@@ -960,12 +919,10 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
       if (_wsS && _wsS.readyState === WebSocket.OPEN) {
         try { _wsS.send(JSON.stringify({ type: 'subscribe', noteId: note.id })); } catch {}
       }
-      // Remember this note for next visit
-      localStorage.setItem(SELECTED_NOTE_KEY, note.id);
     } catch {
       setError(t.loadNoteError);
     }
-  }, [t]);
+  };
 
   const handleNewNote = () => {
     if (autoSaveTimerRef.current) {
@@ -1092,7 +1049,6 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
     try {
       const res = await fetch(`${API_BASE}/${selectedNote.id}`, { method: "DELETE" });
       if (!res.ok) throw new Error("failed");
-      localStorage.removeItem(SELECTED_NOTE_KEY);
       setSelectedNote(null);
       selectedNoteRef.current = null;
       setIsEditing(false);
