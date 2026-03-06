@@ -510,6 +510,7 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
 
   // ── Auto-save ────────────────────────────────────────────────────────────────
   const doAutoSave = useCallback(async () => {
+    autoSaveTimerRef.current = null; // 计时器已触发，清空引用以便轮询正确判断 pending 状态
     const note = selectedNoteRef.current;
     const title = editTitleRef.current;
     const content = editContentRef.current;
@@ -949,45 +950,51 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
         mobileShowEditor ? "hidden md:flex" : "flex"
       )}>
         {/* Sidebar header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-slate-800">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-indigo-100 dark:bg-indigo-900/50 rounded-lg flex items-center justify-center">
-              <FileText className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+        <div className="flex flex-col border-b border-gray-100 dark:border-slate-800">
+          {/* 标题行：Logo + 控制按钮 */}
+          <div className="flex items-center justify-between px-3 py-2.5">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-7 h-7 bg-indigo-100 dark:bg-indigo-900/50 rounded-lg flex items-center justify-center flex-shrink-0">
+                <FileText className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+              </div>
+              <span className="font-semibold text-gray-900 dark:text-slate-100 text-sm truncate">SyncNote</span>
+              <span title={t.liveSync} className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
             </div>
-            <span className="font-semibold text-gray-900 dark:text-slate-100 text-base">SyncNote</span>
-            <span title={t.liveSync} className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
+            <div className="flex items-center gap-0.5 flex-shrink-0">
+              {/* Language toggle */}
+              <button
+                onClick={toggleLang}
+                title={lang === "en" ? "切换中文" : "Switch to English"}
+                className="p-1.5 text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+              >
+                <Languages className="w-4 h-4" />
+              </button>
+              {/* Theme toggle */}
+              <button
+                onClick={toggleTheme}
+                title={theme === "light" ? "Dark mode" : "Light mode"}
+                className="p-1.5 text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+              >
+                {theme === "light" ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+              </button>
+              {/* Logout */}
+              <button
+                onClick={onLogout}
+                title={t.signOut}
+                className="p-1.5 text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-0.5">
-            {/* Language toggle */}
-            <button
-              onClick={toggleLang}
-              title={lang === "en" ? "切换中文" : "Switch to English"}
-              className="p-1.5 text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
-            >
-              <Languages className="w-4 h-4" />
-            </button>
-            {/* Theme toggle */}
-            <button
-              onClick={toggleTheme}
-              title={theme === "light" ? "Dark mode" : "Light mode"}
-              className="p-1.5 text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
-            >
-              {theme === "light" ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
-            </button>
-            {/* Logout */}
-            <button
-              onClick={onLogout}
-              title={t.signOut}
-              className="p-1.5 text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
+          {/* 新建按钮独占一行，保证完整显示 */}
+          <div className="px-3 pb-3">
             <Button
               size="sm"
               onClick={handleNewNote}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer h-8 px-2.5 text-xs ml-0.5"
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer h-8 text-xs"
             >
-              <PlusCircle className="w-3.5 h-3.5 mr-1" />
+              <PlusCircle className="w-3.5 h-3.5 mr-1.5" />
               {t.newNote}
             </Button>
           </div>
