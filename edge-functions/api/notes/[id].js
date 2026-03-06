@@ -24,6 +24,9 @@ export async function onRequestOptions() {
 
 // GET /api/notes/:id — get a single note
 export async function onRequestGet({ params, env }) {
+  if (!env.notesKV) {
+    return jsonResponse({ error: 'KV storage binding (notesKV) is not configured. Please bind notesKV in EdgeOne Pages settings.' }, 503);
+  }
   const { id } = params;
   try {
     const raw = await env.notesKV.get(`note_${id}`);
@@ -38,6 +41,9 @@ export async function onRequestGet({ params, env }) {
 
 // PUT /api/notes/:id — update a note
 export async function onRequestPut({ request, params, env }) {
+  if (!env.notesKV) {
+    return jsonResponse({ error: 'KV storage binding (notesKV) is not configured. Please bind notesKV in EdgeOne Pages settings.' }, 503);
+  }
   const { id } = params;
 
   let body;
@@ -90,6 +96,9 @@ export async function onRequestPut({ request, params, env }) {
 
 // DELETE /api/notes/:id — delete a note
 export async function onRequestDelete({ params, env }) {
+  if (!env.notesKV) {
+    return jsonResponse({ error: 'KV storage binding (notesKV) is not configured. Please bind notesKV in EdgeOne Pages settings.' }, 503);
+  }
   const { id } = params;
   try {
     const raw = await env.notesKV.get(`note_${id}`);

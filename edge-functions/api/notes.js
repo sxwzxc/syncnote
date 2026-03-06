@@ -24,6 +24,9 @@ export async function onRequestOptions() {
 
 // GET /api/notes — list all notes (returns index with id, title, updatedAt)
 export async function onRequestGet({ env }) {
+  if (!env.notesKV) {
+    return jsonResponse({ error: 'KV storage binding (notesKV) is not configured. Please bind notesKV in EdgeOne Pages settings.' }, 503);
+  }
   try {
     const raw = await env.notesKV.get('notes_index');
     const index = raw ? JSON.parse(raw) : [];
@@ -35,6 +38,9 @@ export async function onRequestGet({ env }) {
 
 // POST /api/notes — create a new note
 export async function onRequestPost({ request, env }) {
+  if (!env.notesKV) {
+    return jsonResponse({ error: 'KV storage binding (notesKV) is not configured. Please bind notesKV in EdgeOne Pages settings.' }, 503);
+  }
   let body;
   try {
     body = await request.json();
