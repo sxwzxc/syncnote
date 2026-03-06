@@ -57,14 +57,14 @@ type AutoSaveStatus = "idle" | "pending" | "saving" | "saved" | "error";
 // ── Constants ─────────────────────────────────────────────────────────────────
 const API_BASE = "/api/notes";
 const AUTH_API = "/api/auth";
-const POLL_INTERVAL_MS = 1500;  // poll every 1.5 seconds for near-real-time sync
-const AUTO_SAVE_DELAY_MS = 800; // debounce auto-save
+const POLL_INTERVAL_MS = 600;   // poll every 0.6 s for near-real-time sync
+const AUTO_SAVE_DELAY_MS = 400; // debounce auto-save
 const MAX_NOTE_BYTES = 25 * 1024 * 1024;
 const AUTH_STORAGE_KEY = "syncnote_auth";
 const LANG_STORAGE_KEY = "syncnote_lang";
 const THEME_STORAGE_KEY = "syncnote_theme";
 const AUTH_MAX_DAYS = 30;
-const WS_HEARTBEAT_MS = 5000;
+const WS_HEARTBEAT_MS = 3000;
 const WS_RECONNECT_BASE_MS = 1000;
 const WS_RECONNECT_MAX_MS = 10000;
 
@@ -455,6 +455,7 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
   const [isDesktop, setIsDesktop] = useState(false);
   const [lightboxImg, setLightboxImg] = useState<NoteImage | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; img: NoteImage; inEditor: boolean } | null>(null);
+  const [imagesPanelHeight, setImagesPanelHeight] = useState(112);
 
   // Refs to access latest state in async callbacks
   const selectedNoteRef = useRef<Note | null>(null);
@@ -473,6 +474,7 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
   const wsSubscribedNoteIdRef = useRef<string | null>(null);
   const pollFnRef = useRef<(() => void) | null>(null);
   const sidebarWidthRef = useRef(220);
+  const imagesPanelHeightRef = useRef(112);
 
   useEffect(() => { selectedNoteRef.current = selectedNote; }, [selectedNote]);
   useEffect(() => { isEditingRef.current = isEditing; }, [isEditing]);
@@ -482,6 +484,7 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
   useEffect(() => { editImagesRef.current = editImages; }, [editImages]);
   useEffect(() => { autoSaveStatusRef.current = autoSaveStatus; }, [autoSaveStatus]);
   useEffect(() => { sidebarWidthRef.current = sidebarWidth; }, [sidebarWidth]);
+  useEffect(() => { imagesPanelHeightRef.current = imagesPanelHeight; }, [imagesPanelHeight]);
 
   // ── Desktop detection ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -836,6 +839,29 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
       document.body.style.userSelect = "";
     };
     document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  }, []);
+
+  // ── Images panel drag-resize ─────────────────────────────────────────────────
+  const handleImagesPanelResizeMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = imagesPanelHeightRef.current;
+    const onMouseMove = (ev: MouseEvent) => {
+      // dragging up → larger panel; dragging down → smaller panel
+      const newH = Math.max(72, Math.min(360, startH - (ev.clientY - startY)));
+      setImagesPanelHeight(newH);
+      imagesPanelHeightRef.current = newH;
+    };
+    const onMouseUp = () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.body.style.cursor = "row-resize";
     document.body.style.userSelect = "none";
     document.addEventListener("mousemove", onMouseMove);
     document.addEventListener("mouseup", onMouseUp);
@@ -1253,7 +1279,7 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
             {/* Scrollable content area */}
             <div className="flex-1 overflow-y-auto">
               {/* Text content */}
-              <div className="px-4 md:px-8 pt-4 pb-2">
+              <div className="px-4 md:px-8 pt-4 pb-4">
                 <textarea
                   value={editContent}
                   onChange={(e) => setEditContent(e.target.value)}
@@ -1261,12 +1287,24 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
                   className="w-full min-h-[180px] text-gray-700 dark:text-slate-300 bg-transparent border-none outline-none resize-none placeholder-gray-300 dark:placeholder-slate-700 text-sm leading-relaxed"
                 />
               </div>
+            </div>
 
-              {/* Images section */}
-              <div className="px-4 md:px-8 pb-2 border-t border-gray-100 dark:border-slate-800 pt-3">
+            {/* ── Resizable Images panel ── */}
+            <div
+              className="flex-shrink-0 border-t border-gray-100 dark:border-slate-800 relative flex flex-col"
+              style={{ height: imagesPanelHeight }}
+            >
+              {/* Drag handle */}
+              <div
+                className="absolute top-0 left-0 right-0 h-1.5 cursor-row-resize z-10 hover:bg-indigo-300/50 dark:hover:bg-indigo-600/30 transition-colors"
+                onMouseDown={handleImagesPanelResizeMouseDown}
+                title={lang === "zh" ? "拖动调整高度" : "Drag to resize"}
+              />
+              {/* Panel inner */}
+              <div className="flex-1 overflow-y-auto px-4 md:px-8 pt-3 pb-2">
                 <div className="flex flex-wrap gap-2 items-start">
                   {editImages.map((img) => (
-                    <div key={img.id} className="relative group w-20 h-20 flex-shrink-0">
+                    <div key={img.id} className="relative group w-16 h-16 flex-shrink-0">
                       <img
                         src={img.data}
                         alt={img.name}
@@ -1286,9 +1324,9 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
                   ))}
                   <label
                     title={t.addImage}
-                    className="w-20 h-20 flex-shrink-0 flex flex-col items-center justify-center border-2 border-dashed border-gray-200 dark:border-slate-700 rounded-lg cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
+                    className="w-16 h-16 flex-shrink-0 flex flex-col items-center justify-center border-2 border-dashed border-gray-200 dark:border-slate-700 rounded-lg cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
                   >
-                    <ImagePlus className="w-5 h-5 text-gray-300 dark:text-slate-600" />
+                    <ImagePlus className="w-4 h-4 text-gray-300 dark:text-slate-600" />
                     <input
                       type="file"
                       accept="image/*"
@@ -1298,9 +1336,11 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
                     />
                   </label>
                 </div>
-                <p className="mt-1.5 text-xs text-gray-300 dark:text-slate-600">
-                  {lang === "zh" ? "双击查看大图 · 右键更多选项 · Ctrl+V 粘贴图片" : "Double-click to view · Right-click for options · Ctrl+V to paste"}
-                </p>
+                {editImages.length === 0 && (
+                  <p className="mt-1 text-xs text-gray-300 dark:text-slate-600">
+                    {lang === "zh" ? "点击 + 添加图片，或拖拽 / Ctrl+V 粘贴" : "Click + to add · drag & drop · Ctrl+V to paste"}
+                  </p>
+                )}
               </div>
             </div>
 
