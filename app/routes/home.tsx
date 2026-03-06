@@ -559,16 +559,42 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
 
   // ── Auto-load last selected note on mount ────────────────────────────────────
   useEffect(() => {
-    if (notesList.length === 0 || autoLoadAttemptedRef.current) return;
+    // Only attempt auto-load once, when notes list is first loaded
+    if (autoLoadAttemptedRef.current) return;
+    if (notesList.length === 0) return; // Wait until notes are loaded
+    
     autoLoadAttemptedRef.current = true;
     const savedNoteId = localStorage.getItem(SELECTED_NOTE_KEY);
-    if (savedNoteId) {
-      const noteExists = notesList.some((n) => n.id === savedNoteId);
-      if (noteExists) {
-        handleSelectNote(savedNoteId);
-      }
+    if (savedNoteId && notesList.some((n) => n.id === savedNoteId)) {
+      // Safely load the note without depending on handleSelectNote callback
+      (async () => {
+        try {
+          const res = await fetch(`${API_BASE}/${savedNoteId}`);
+          if (!res.ok) return;
+          const note: Note = await res.json();
+          setSelectedNote(note);
+          selectedNoteRef.current = note;
+          setEditTitle(note.title);
+          setEditContent(note.content);
+          setEditImages(note.images ?? []);
+          lastSavedRef.current = {
+            title: note.title,
+            content: note.content,
+            images: note.images ?? [],
+          };
+          setIsEditing(true);
+          setMobileShowEditor(true);
+          wsSubscribedNoteIdRef.current = note.id;
+          const _wsS = wsRef.current;
+          if (_wsS && _wsS.readyState === WebSocket.OPEN) {
+            try { _wsS.send(JSON.stringify({ type: 'subscribe', noteId: note.id })); } catch {}
+          }
+        } catch {
+          // Silently ignore auto-load errors
+        }
+      })();
     }
-  }, [notesList, handleSelectNote]);
+  }, [notesList]);
 
   // ── Auto-save ────────────────────────────────────────────────────────────────
   const doAutoSave = useCallback(async () => {
