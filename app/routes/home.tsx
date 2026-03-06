@@ -64,6 +64,9 @@ const AUTH_STORAGE_KEY = "syncnote_auth";
 const LANG_STORAGE_KEY = "syncnote_lang";
 const THEME_STORAGE_KEY = "syncnote_theme";
 const AUTH_MAX_DAYS = 30;
+const WS_HEARTBEAT_MS = 5000;
+const WS_RECONNECT_BASE_MS = 1000;
+const WS_RECONNECT_MAX_MS = 10000;
 
 // ── Translations ──────────────────────────────────────────────────────────────
 type Translations = {
@@ -454,6 +457,11 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
   const lastSavedRef = useRef<{ title: string; content: string; images: NoteImage[] } | null>(null);
   const autoSaveStatusRef = useRef<AutoSaveStatus>("idle");
   const remoteSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const wsReconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wsHeartbeatTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const wsSubscribedNoteIdRef = useRef<string | null>(null);
+  const pollFnRef = useRef<(() => void) | null>(null);
 
   useEffect(() => { selectedNoteRef.current = selectedNote; }, [selectedNote]);
   useEffect(() => { isEditingRef.current = isEditing; }, [isEditing]);
@@ -540,6 +548,11 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
       );
       setAutoSaveStatus("saved");
       setTimeout(() => setAutoSaveStatus((s) => (s === "saved" ? "idle" : s)), 3000);
+      // Notify other WebSocket clients that this note was updated
+      const _ws = wsRef.current;
+      if (_ws && _ws.readyState === WebSocket.OPEN) {
+        try { _ws.send(JSON.stringify({ type: 'note_updated', noteId: updated.id, updatedAt: updated.updatedAt })); } catch {}
+      }
     } catch {
       setAutoSaveStatus("error");
     }
@@ -612,8 +625,92 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
       }
     };
 
+    pollFnRef.current = poll;
     const id = setInterval(poll, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
+    return () => {
+      clearInterval(id);
+      pollFnRef.current = null;
+    };
+  }, []);
+
+  // ── WebSocket — push notifications for near-instant cross-device sync ────────
+  useEffect(() => {
+    if (typeof WebSocket === 'undefined') return;
+    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${location.host}/sync`;
+    let reconnectDelay = WS_RECONNECT_BASE_MS;
+    let unmounted = false;
+
+    function connect() {
+      if (unmounted) return;
+      try {
+        const ws = new WebSocket(wsUrl);
+        wsRef.current = ws;
+
+        ws.onopen = () => {
+          reconnectDelay = WS_RECONNECT_BASE_MS;
+          // Re-subscribe to the current note after reconnect
+          const noteId = wsSubscribedNoteIdRef.current;
+          if (noteId) ws.send(JSON.stringify({ type: 'subscribe', noteId }));
+          // Start keepalive heartbeat
+          if (wsHeartbeatTimerRef.current) clearInterval(wsHeartbeatTimerRef.current);
+          wsHeartbeatTimerRef.current = setInterval(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: 'heartbeat' }));
+            }
+          }, WS_HEARTBEAT_MS);
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.type === 'note_updated') {
+              const currentNote = selectedNoteRef.current;
+              if (currentNote && msg.noteId === currentNote.id) {
+                // Trigger an immediate sync instead of waiting for the next poll interval
+                pollFnRef.current?.();
+              }
+            }
+          } catch {
+            // ignore malformed messages
+          }
+        };
+
+        ws.onclose = () => {
+          if (wsHeartbeatTimerRef.current) {
+            clearInterval(wsHeartbeatTimerRef.current);
+            wsHeartbeatTimerRef.current = null;
+          }
+          wsRef.current = null;
+          if (unmounted) return;
+          // Exponential backoff reconnect
+          wsReconnectTimerRef.current = setTimeout(() => {
+            reconnectDelay = Math.min(reconnectDelay * 2, WS_RECONNECT_MAX_MS);
+            connect();
+          }, reconnectDelay);
+        };
+
+        ws.onerror = () => {
+          ws.close();
+        };
+      } catch {
+        // WebSocket unavailable (local dev without node-functions) — polling handles sync
+      }
+    }
+
+    connect();
+
+    return () => {
+      unmounted = true;
+      if (wsReconnectTimerRef.current) clearTimeout(wsReconnectTimerRef.current);
+      if (wsHeartbeatTimerRef.current) clearInterval(wsHeartbeatTimerRef.current);
+      const ws = wsRef.current;
+      if (ws) {
+        ws.onclose = null; // prevent reconnect attempt during unmount
+        ws.close();
+        wsRef.current = null;
+      }
+    };
   }, []);
 
   // ── Image handlers ───────────────────────────────────────────────────────────
@@ -695,6 +792,12 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
       };
       setIsEditing(true);
       setMobileShowEditor(true);
+      // Subscribe to real-time updates for this note via WebSocket
+      wsSubscribedNoteIdRef.current = note.id;
+      const _wsS = wsRef.current;
+      if (_wsS && _wsS.readyState === WebSocket.OPEN) {
+        try { _wsS.send(JSON.stringify({ type: 'subscribe', noteId: note.id })); } catch {}
+      }
     } catch {
       setError(t.loadNoteError);
     }
@@ -783,6 +886,11 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
         lastSavedRef.current = { title: editTitle, content: editContent, images: editImages };
         setAutoSaveStatus("idle");
         await loadNotes();
+        // Notify other WebSocket clients that this note was updated
+        const _wsM = wsRef.current;
+        if (_wsM && _wsM.readyState === WebSocket.OPEN) {
+          try { _wsM.send(JSON.stringify({ type: 'note_updated', noteId: updated.id, updatedAt: updated.updatedAt })); } catch {}
+        }
       }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : t.saveError);
