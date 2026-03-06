@@ -366,7 +366,7 @@ function LoginScreen({ onSuccess, t, lang, toggleLang, theme, toggleTheme }: Log
 // ── Root Gate: handles auth + lang/theme ─────────────────────────────────────
 export default function NotesPage() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
-  const [lang, setLang] = useState<Lang>("en");
+  const [lang, setLang] = useState<Lang>("zh");
   const [theme, setTheme] = useState<"light" | "dark">("light");
 
   useEffect(() => {
@@ -475,6 +475,8 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
   const pollFnRef = useRef<(() => void) | null>(null);
   const sidebarWidthRef = useRef(220);
   const imagesPanelHeightRef = useRef(112);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleSaveRef = useRef<() => Promise<void>>(async () => {});
 
   useEffect(() => { selectedNoteRef.current = selectedNote; }, [selectedNote]);
   useEffect(() => { isEditingRef.current = isEditing; }, [isEditing]);
@@ -1017,6 +1019,23 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
       setIsSaving(false);
     }
   };
+
+  // Keep ref up-to-date so the Ctrl+S handler always calls the latest version
+  handleSaveRef.current = handleSave;
+
+  // ── Ctrl+S / Cmd+S manual save ───────────────────────────────────────────────
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        if (isEditingRef.current) {
+          e.preventDefault();
+          handleSaveRef.current();
+        }
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   const handleDelete = async () => {
     if (!selectedNote) return;
