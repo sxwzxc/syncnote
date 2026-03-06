@@ -1276,15 +1276,15 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
             </div>
             <div className="mx-4 md:mx-8 border-b border-gray-100 dark:border-slate-800 flex-shrink-0" />
 
-            {/* Scrollable content area */}
-            <div className="flex-1 overflow-y-auto">
+            {/* Scrollable content area — fills all space between divider and images panel */}
+            <div className="flex-1 flex flex-col overflow-hidden">
               {/* Text content */}
-              <div className="px-4 md:px-8 pt-4 pb-4">
+              <div className="flex-1 flex flex-col px-4 md:px-8 pt-4 pb-2">
                 <textarea
                   value={editContent}
                   onChange={(e) => setEditContent(e.target.value)}
                   placeholder={t.contentPlaceholder}
-                  className="w-full min-h-[180px] text-gray-700 dark:text-slate-300 bg-transparent border-none outline-none resize-none placeholder-gray-300 dark:placeholder-slate-700 text-sm leading-relaxed"
+                  className="flex-1 w-full text-gray-700 dark:text-slate-300 bg-transparent border-none outline-none resize-none placeholder-gray-300 dark:placeholder-slate-700 text-sm leading-relaxed"
                 />
               </div>
             </div>
