@@ -1,136 +1,94 @@
-# EdgeOne Pages React Router Starter
+# SyncNote
 
-A comprehensive React Router v7 starter template for EdgeOne Pages, showcasing various rendering modes and full-stack capabilities.
+A lightweight, password-protected note-taking app with real-time cross-device sync, built on [EdgeOne Pages](https://pages.edgeone.ai/) (React Router v7 + EdgeOne KV).
 
-## 🚀 Features
+[中文文档](./README_zh-CN.md)
 
-- **Server-Side Rendering (SSR)** - Real-time server-side rendering
-- **Client-Side Rendering (CSR)** - Dynamic rendering in the browser
-- **Streaming SSR** - Progressive rendering with deferred data loading
-- **Static Site Generation (SSG)** - Static generation at build time
-- **Pages Functions** - Edge and Node.js serverless functions
-- **Modern UI** - Beautiful interface with Tailwind CSS
+---
+
+## ✨ Features
+
+- **Password protection** — Single shared password guards all notes; session persists for 30 days
+- **Real-time sync** — Notes sync instantly across devices via WebSocket push + HTTP polling fallback
+- **Auto-save** — Changes are saved automatically 800 ms after you stop typing
+- **Image attachments** — Attach images by clicking, dragging, or **pasting** (supports screenshots)
+  - Double-click any image to open a full-screen lightbox
+  - Right-click for: view full size, download, remove
+- **Resizable sidebar** — Drag the sidebar edge to adjust its width
+- **Dark / Light theme** — Persisted in `localStorage`
+- **Bilingual UI** — Toggle between English and Chinese at any time
+- **Mobile responsive** — Full-screen editor on small screens with a back button
 
 ## 🛠️ Tech Stack
 
-- **React Router v7** - Full-stack React framework
-- **TypeScript** - Type safety
-- **Tailwind CSS** - Styling framework
-- **Lucide React** - Icon library
-- **Vite** - Build tool
+| Layer | Technology |
+|---|---|
+| Framework | React Router v7 (SSR) |
+| Language | TypeScript |
+| Styling | Tailwind CSS v4 |
+| Icons | Lucide React |
+| Build | Vite |
+| Storage | EdgeOne KV |
+| Runtime | EdgeOne Pages Functions (Edge + Node.js) |
+| Real-time | WebSocket (node-functions/sync.js) + polling |
 
-## 📦 Installation
+## 📦 Quick Start
 
 ```bash
-# Clone the project
-git clone <repository-url>
-cd react-router-v7-demo
+# Clone
+git clone https://github.com/sxwzxc/syncnote.git
+cd syncnote
 
 # Install dependencies
 npm install
 
-# Start development server
+# Start local dev server (EdgeOne CLI required)
 edgeone pages dev
+```
 
-# deploy the project
+Set the following environment variables in your EdgeOne Pages project:
+
+| Variable | Description |
+|---|---|
+| `PASSWORD` | Login password for the app |
+| `notesKV` | Bound KV namespace for storing notes |
+
+Deploy:
+
+```bash
 edgeone pages deploy
 ```
 
-Learn more about [EdgeOne CLI](https://pages.edgeone.ai/document/edgeone-cli).
-
-## 🎯 Pages Overview
-
-### Home (/)
-
-Displays project overview and entry points to various feature modules.
-
-### SSR (/ssr)
-
-Demonstrates server-side rendering:
-
-- Re-renders on the server for each request
-- Real-time data fetching
-- SEO friendly
-- Suitable for dynamic content
-
-### CSR (/csr)
-
-Demonstrates client-side rendering:
-
-- All rendering happens in the browser
-- Data fetching after JavaScript loads
-- Rich interactive experiences
-- Reduced server load
-- Suitable for interactive applications
-
-### Streaming (/streaming)
-
-Demonstrates streaming SSR:
-
-- Progressive rendering with deferred data loading
-- HTML shell sent immediately with fast data
-- Slow data streams in as it becomes available
-- Optimal user experience with Suspense boundaries
-- Works for both SSR and client-side navigation
-
-### Pre-render (/prerender)
-
-Demonstrates static site generation:
-
-- Pre-generates pages at build time
-- Fastest loading speed
-- CDN friendly
-- Suitable for static content
-
-### Pages Functions (/pages-functions)
-
-Demonstrates EdgeOne Pages Functions:
-
-- **Edge Functions** - Ultra-low latency on 3200+ global edge nodes
-- **Node Functions** - Full Node.js runtime with npm ecosystem
-- Serverless architecture with auto-scaling
-- Perfect for APIs and backend logic
+> Learn more: [EdgeOne CLI docs](https://pages.edgeone.ai/document/edgeone-cli)
 
 ## 📁 Project Structure
 
 ```
 app/
-├── components/          # Components
-│   ├── ui/             # UI components
-│   ├── layout/         # Layout components
-│   ├── Header.tsx      # Header navigation
-│   ├── Hero.tsx        # Home hero section
-│   ├── Features.tsx    # Features showcase
-│   └── FeatureCard.tsx # Feature card
-├── lib/                # Utility functions
-│   └── utils.ts        # Common utilities
-├── routes/             # Route pages
-│   ├── home.tsx        # Home page
-│   ├── ssr.tsx         # SSR demo
-│   ├── csr.tsx         # CSR demo
-│   ├── streaming.tsx   # Streaming SSR demo
-│   ├── prerender.tsx   # Pre-render demo
-│   └── pages-functions.tsx    # Pages Functions demo
-├── app.css             # Global styles
-├── root.tsx            # Root component
-└── routes.ts           # Route configuration
-edge-functions/         # Edge runtime functions
-node-functions/         # Node.js runtime functions
-public/                 # Static assets
+├── routes/
+│   └── home.tsx          # Main notes UI (auth + editor + sidebar)
+├── components/
+│   └── ui/button.tsx     # Reusable button component
+├── lib/utils.ts           # cn() utility
+├── root.tsx               # Root layout
+└── routes.ts              # Route definitions
+edge-functions/
+├── api/
+│   ├── auth.js            # POST /api/auth — password verification
+│   ├── notes.js           # GET / POST /api/notes
+│   └── notes/[id].js      # GET / PUT / DELETE /api/notes/:id
+node-functions/
+└── sync.js                # WebSocket server for real-time sync
+public/                    # Static assets
 ```
 
-## 📚 Learning Resources
+## 🔧 Architecture Notes
 
-- [EdgeOne Pages Official Documentation](https://pages.edgeone.ai/document/framework-freact-router)
-- [React Router v7 Official Documentation](https://reactrouter.com/start/framework)
-- [React Router v7 GitHub](https://github.com/remix-run/react-router)
-- [Vite Documentation](https://vitejs.dev/)
-- [Tailwind CSS Documentation](https://tailwindcss.com/)
-
-## 🤝 Contributing
-
-Issues and Pull Requests are welcome!
+- **KV storage** — Each note is stored as a JSON value under its UUID key. An index key (`__index`) holds the list of note IDs and metadata.
+- **Auto-save conflict resolution** — If a remote update arrives while the user has pending local changes, the local version wins (the next auto-save will overwrite the remote).
+- **Note size limit** — 25 MB per note (including base64-encoded images). A size indicator is shown in the editor.
 
 ## 📄 License
 
 MIT License
+

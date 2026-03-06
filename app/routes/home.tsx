@@ -111,6 +111,8 @@ type Translations = {
   deleteImage: string;
   deleteNote: string;
   confirmDelete: (title: string) => string;
+  viewImage: string;
+  downloadImage: string;
 };
 
 type Lang = "en" | "zh";
@@ -158,6 +160,8 @@ const translations: Record<Lang, Translations> = {
     deleteImage: "Remove image",
     deleteNote: "Delete note",
     confirmDelete: (title: string) => `Delete "${title}"?`,
+    viewImage: "View full size",
+    downloadImage: "Download",
   },
   zh: {
     signIn: "登录",
@@ -201,6 +205,8 @@ const translations: Record<Lang, Translations> = {
     deleteImage: "删除图片",
     deleteNote: "删除笔记",
     confirmDelete: (title: string) => `确定删除"${title}"？`,
+    viewImage: "查看大图",
+    downloadImage: "下载图片",
   },
 };
 
@@ -445,6 +451,10 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
   const [autoSaveStatus, setAutoSaveStatus] = useState<AutoSaveStatus>("idle");
   const [mobileShowEditor, setMobileShowEditor] = useState(false);
   const [remoteSyncStatus, setRemoteSyncStatus] = useState<"idle" | "updated">("idle");
+  const [sidebarWidth, setSidebarWidth] = useState(220);
+  const [isDesktop, setIsDesktop] = useState(false);
+  const [lightboxImg, setLightboxImg] = useState<NoteImage | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; img: NoteImage; inEditor: boolean } | null>(null);
 
   // Refs to access latest state in async callbacks
   const selectedNoteRef = useRef<Note | null>(null);
@@ -462,6 +472,7 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
   const wsHeartbeatTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const wsSubscribedNoteIdRef = useRef<string | null>(null);
   const pollFnRef = useRef<(() => void) | null>(null);
+  const sidebarWidthRef = useRef(220);
 
   useEffect(() => { selectedNoteRef.current = selectedNote; }, [selectedNote]);
   useEffect(() => { isEditingRef.current = isEditing; }, [isEditing]);
@@ -470,6 +481,37 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
   useEffect(() => { editContentRef.current = editContent; }, [editContent]);
   useEffect(() => { editImagesRef.current = editImages; }, [editImages]);
   useEffect(() => { autoSaveStatusRef.current = autoSaveStatus; }, [autoSaveStatus]);
+  useEffect(() => { sidebarWidthRef.current = sidebarWidth; }, [sidebarWidth]);
+
+  // ── Desktop detection ────────────────────────────────────────────────────────
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 768px)");
+    setIsDesktop(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setIsDesktop(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+
+  // ── Close context menu on outside click or Escape ────────────────────────────
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape") setContextMenu(null); };
+    document.addEventListener("click", close);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("click", close);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [contextMenu]);
+
+  // ── Close lightbox on Escape ─────────────────────────────────────────────────
+  useEffect(() => {
+    if (!lightboxImg) return;
+    const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape") setLightboxImg(null); };
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [lightboxImg]);
 
   const noteSizeBytes = useMemo(() => {
     const approxNote = {
@@ -744,6 +786,16 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
   const handlePaste = useCallback(
     (e: React.ClipboardEvent) => {
       if (!isEditingRef.current) return;
+      // Check clipboard items first — this captures screenshots and copied images
+      const items = Array.from(e.clipboardData.items);
+      const imageItems = items.filter((item) => item.type.startsWith("image/"));
+      if (imageItems.length > 0) {
+        e.preventDefault();
+        const files = imageItems.map((item) => item.getAsFile()).filter((f): f is File => f !== null);
+        handleImageFiles(files);
+        return;
+      }
+      // Fall back to file list (e.g. dragged-and-pasted files)
       const imageFiles = Array.from(e.clipboardData.files).filter((f) =>
         f.type.startsWith("image/")
       );
@@ -765,6 +817,46 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
+  }, []);
+
+  // ── Sidebar drag-resize ──────────────────────────────────────────────────────
+  const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = sidebarWidthRef.current;
+    const onMouseMove = (ev: MouseEvent) => {
+      const newWidth = Math.max(160, Math.min(480, startWidth + ev.clientX - startX));
+      setSidebarWidth(newWidth);
+      sidebarWidthRef.current = newWidth;
+    };
+    const onMouseUp = () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  }, []);
+
+  // ── Image lightbox & context menu ────────────────────────────────────────────
+  const handleImageDoubleClick = useCallback((img: NoteImage) => {
+    setLightboxImg(img);
+  }, []);
+
+  const handleImageContextMenu = useCallback((e: React.MouseEvent, img: NoteImage, inEditor: boolean) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, img, inEditor });
+  }, []);
+
+  const downloadImage = useCallback((img: NoteImage) => {
+    const a = document.createElement("a");
+    a.href = img.data;
+    a.download = img.name || "image";
+    a.click();
   }, []);
 
   // ── Note operations ───────────────────────────────────────────────────────────
@@ -945,10 +1037,16 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
     >
       {/* ── Sidebar ── */}
       <aside className={cn(
-        "flex-shrink-0 flex flex-col bg-white dark:bg-slate-900 border-r border-gray-100 dark:border-slate-800 shadow-sm",
-        "w-full md:w-72",
+        "flex-shrink-0 flex flex-col bg-white dark:bg-slate-900 border-r border-gray-100 dark:border-slate-800 shadow-sm relative",
+        "w-full",
         mobileShowEditor ? "hidden md:flex" : "flex"
-      )}>
+      )} style={isDesktop ? { width: sidebarWidth } : undefined}>
+        {/* Drag resize handle – desktop only */}
+        <div
+          className="hidden md:block absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize z-10 hover:bg-indigo-300/60 dark:hover:bg-indigo-600/40 transition-colors"
+          onMouseDown={handleResizeMouseDown}
+          title="Drag to resize"
+        />
         {/* Sidebar header */}
         <div className="flex flex-col border-b border-gray-100 dark:border-slate-800">
           {/* 标题行：Logo + 控制按钮 */}
@@ -1168,11 +1266,13 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
               <div className="px-4 md:px-8 pb-2 border-t border-gray-100 dark:border-slate-800 pt-3">
                 <div className="flex flex-wrap gap-2 items-start">
                   {editImages.map((img) => (
-                    <div key={img.id} className="relative group w-16 h-16 flex-shrink-0">
+                    <div key={img.id} className="relative group w-20 h-20 flex-shrink-0">
                       <img
                         src={img.data}
                         alt={img.name}
-                        className="w-full h-full object-cover rounded-lg border border-gray-200 dark:border-slate-700"
+                        className="w-full h-full object-cover rounded-lg border border-gray-200 dark:border-slate-700 cursor-zoom-in"
+                        onDoubleClick={() => handleImageDoubleClick(img)}
+                        onContextMenu={(e) => handleImageContextMenu(e, img, true)}
                       />
                       <button
                         type="button"
@@ -1186,7 +1286,7 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
                   ))}
                   <label
                     title={t.addImage}
-                    className="w-16 h-16 flex-shrink-0 flex flex-col items-center justify-center border-2 border-dashed border-gray-200 dark:border-slate-700 rounded-lg cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
+                    className="w-20 h-20 flex-shrink-0 flex flex-col items-center justify-center border-2 border-dashed border-gray-200 dark:border-slate-700 rounded-lg cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
                   >
                     <ImagePlus className="w-5 h-5 text-gray-300 dark:text-slate-600" />
                     <input
@@ -1198,6 +1298,9 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
                     />
                   </label>
                 </div>
+                <p className="mt-1.5 text-xs text-gray-300 dark:text-slate-600">
+                  {lang === "zh" ? "双击查看大图 · 右键更多选项 · Ctrl+V 粘贴图片" : "Double-click to view · Right-click for options · Ctrl+V to paste"}
+                </p>
               </div>
             </div>
 
@@ -1263,8 +1366,9 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
                         key={img.id}
                         src={img.data}
                         alt={img.name}
-                        className="w-20 h-20 object-cover rounded-lg border border-gray-200 dark:border-slate-700 cursor-pointer hover:opacity-90 transition-opacity"
-                        onClick={() => window.open(img.data, "_blank")}
+                        className="w-24 h-24 object-cover rounded-lg border border-gray-200 dark:border-slate-700 cursor-zoom-in hover:opacity-90 transition-opacity"
+                        onDoubleClick={() => handleImageDoubleClick(img)}
+                        onContextMenu={(e) => handleImageContextMenu(e, img, false)}
                       />
                     ))}
                   </div>
@@ -1294,6 +1398,85 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
           </div>
         )}
       </main>
+
+      {/* ── Context Menu ── */}
+      {contextMenu && (() => {
+        const menuW = 168;
+        const menuH = contextMenu.inEditor ? 132 : 96;
+        const x = contextMenu.x + menuW > window.innerWidth ? contextMenu.x - menuW : contextMenu.x;
+        const y = contextMenu.y + menuH > window.innerHeight ? contextMenu.y - menuH : contextMenu.y;
+        return (
+          <div
+            className="fixed z-50 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl shadow-xl py-1 min-w-[168px]"
+            style={{ top: y, left: x }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800 flex items-center gap-2"
+              onClick={() => { setLightboxImg(contextMenu.img); setContextMenu(null); }}
+            >
+              <Eye className="w-4 h-4 flex-shrink-0 text-gray-400" />
+              {t.viewImage}
+            </button>
+            <button
+              className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800 flex items-center gap-2"
+              onClick={() => { downloadImage(contextMenu.img); setContextMenu(null); }}
+            >
+              <ImagePlus className="w-4 h-4 flex-shrink-0 text-gray-400" />
+              {t.downloadImage}
+            </button>
+            {contextMenu.inEditor && (
+              <>
+                <div className="my-1 border-t border-gray-100 dark:border-slate-800" />
+                <button
+                  className="w-full text-left px-3 py-2 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-950/50 flex items-center gap-2"
+                  onClick={() => {
+                    setEditImages((prev) => prev.filter((i) => i.id !== contextMenu.img.id));
+                    setContextMenu(null);
+                  }}
+                >
+                  <Trash2 className="w-4 h-4 flex-shrink-0" />
+                  {t.deleteImage}
+                </button>
+              </>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* ── Lightbox ── */}
+      {lightboxImg && (
+        <div
+          className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4"
+          onClick={() => setLightboxImg(null)}
+        >
+          <button
+            className="absolute top-4 right-4 w-9 h-9 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
+            onClick={() => setLightboxImg(null)}
+            aria-label="Close"
+          >
+            <X className="w-5 h-5" />
+          </button>
+          <button
+            className="absolute bottom-5 right-5 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm transition-colors"
+            onClick={(e) => { e.stopPropagation(); downloadImage(lightboxImg); }}
+          >
+            <ImagePlus className="w-4 h-4" />
+            {t.downloadImage}
+          </button>
+          <img
+            src={lightboxImg.data}
+            alt={lightboxImg.name}
+            className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+          {lightboxImg.name && (
+            <p className="absolute bottom-5 left-5 text-white/60 text-sm truncate max-w-[60vw]">
+              {lightboxImg.name}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
