@@ -64,13 +64,14 @@ export async function onRequestPut({ request, params }) {
     const existing = JSON.parse(raw);
     const title = (body.title !== undefined ? body.title : existing.title).trim();
     const content = body.content !== undefined ? body.content : existing.content;
+    const images = body.images !== undefined ? body.images : (existing.images ?? []);
 
     if (!title) {
       return jsonResponse({ error: 'Title is required' }, 400);
     }
 
     const now = new Date().toISOString();
-    const updated = { ...existing, title, content, updatedAt: now };
+    const updated = { ...existing, title, content, images, updatedAt: now };
 
     // Enforce 25 MB KV size limit
     const updatedJson = JSON.stringify(updated);

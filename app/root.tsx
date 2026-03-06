@@ -31,8 +31,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <Meta />
         <Links />
+        {/* Restore dark mode class before hydration to avoid flash */}
+        <script dangerouslySetInnerHTML={{
+          __html: `try{if(localStorage.getItem('syncnote_theme')==='dark')document.documentElement.classList.add('dark')}catch(e){}`
+        }} />
       </head>
-      <body className="bg-white text-gray-900 antialiased">
+      <body className="antialiased">
         {children}
         <ScrollRestoration />
         <Scripts />

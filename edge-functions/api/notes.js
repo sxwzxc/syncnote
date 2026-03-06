@@ -52,6 +52,7 @@ export async function onRequestPost({ request }) {
 
   const title = (body.title || '').trim();
   const content = body.content !== undefined ? body.content : '';
+  const images = Array.isArray(body.images) ? body.images : [];
 
   if (!title) {
     return jsonResponse({ error: 'Title is required' }, 400);
@@ -59,7 +60,7 @@ export async function onRequestPost({ request }) {
 
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
-  const note = { id, title, content, createdAt: now, updatedAt: now };
+  const note = { id, title, content, images, createdAt: now, updatedAt: now };
 
   // Enforce 25 MB KV size limit
   const noteJson = JSON.stringify(note);
