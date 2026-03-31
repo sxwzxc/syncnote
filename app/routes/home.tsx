@@ -229,6 +229,22 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
+function isImageAttachment(file: NoteImage): boolean {
+  if (file.type) return file.type.startsWith("image/");
+  return file.data.startsWith("data:image/");
+}
+
+function getAttachmentBadge(file: NoteImage): string {
+  const ext = file.name?.split(".").pop()?.trim().toUpperCase();
+  if (ext && ext.length <= 5) return ext;
+  if (file.type === "application/pdf") return "PDF";
+  if (file.type.startsWith("text/")) return "TXT";
+  if (file.type.startsWith("audio/")) return "AUDIO";
+  if (file.type.startsWith("video/")) return "VIDEO";
+  if (file.type.includes("zip") || file.type.includes("compressed") || file.type.includes("tar")) return "ZIP";
+  return "FILE";
+}
+
 function isAuthValid(): boolean {
   try {
     const raw = localStorage.getItem(AUTH_STORAGE_KEY);
@@ -860,21 +876,25 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
   }, []);
 
   // ── Image lightbox & context menu ────────────────────────────────────────────
-  const handleImageDoubleClick = useCallback((img: NoteImage) => {
-    setLightboxImg(img);
-  }, []);
-
-  const handleImageContextMenu = useCallback((e: React.MouseEvent, img: NoteImage, inEditor: boolean) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setContextMenu({ x: e.clientX, y: e.clientY, img, inEditor });
-  }, []);
-
   const downloadImage = useCallback((img: NoteImage) => {
     const a = document.createElement("a");
     a.href = img.data;
     a.download = img.name || "image";
     a.click();
+  }, []);
+
+  const handleImageDoubleClick = useCallback((img: NoteImage) => {
+    if (isImageAttachment(img)) {
+      setLightboxImg(img);
+      return;
+    }
+    downloadImage(img);
+  }, [downloadImage]);
+
+  const handleImageContextMenu = useCallback((e: React.MouseEvent, img: NoteImage, inEditor: boolean) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, img, inEditor });
   }, []);
 
   // ── Note operations ───────────────────────────────────────────────────────────
@@ -1314,13 +1334,27 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
                 <div className="flex flex-wrap gap-2 items-start">
                   {editImages.map((img) => (
                     <div key={img.id} className="relative group w-16 h-16 flex-shrink-0">
-                      <img
-                        src={img.data}
-                        alt={img.name}
-                        className="w-full h-full object-cover rounded-lg border border-gray-200 dark:border-slate-700 cursor-zoom-in"
-                        onDoubleClick={() => handleImageDoubleClick(img)}
-                        onContextMenu={(e) => handleImageContextMenu(e, img, true)}
-                      />
+                      {isImageAttachment(img) ? (
+                        <img
+                          src={img.data}
+                          alt={img.name}
+                          className="w-full h-full object-cover rounded-lg border border-gray-200 dark:border-slate-700 cursor-zoom-in"
+                          onDoubleClick={() => handleImageDoubleClick(img)}
+                          onContextMenu={(e) => handleImageContextMenu(e, img, true)}
+                        />
+                      ) : (
+                        <div
+                          className="w-full h-full rounded-lg border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 flex flex-col items-center justify-center cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
+                          onDoubleClick={() => handleImageDoubleClick(img)}
+                          onContextMenu={(e) => handleImageContextMenu(e, img, true)}
+                          title={img.name}
+                        >
+                          <File className="w-5 h-5 text-gray-400 dark:text-slate-500" />
+                          <span className="mt-1 text-[10px] font-semibold text-gray-500 dark:text-slate-400 leading-none max-w-[90%] truncate">
+                            {getAttachmentBadge(img)}
+                          </span>
+                        </div>
+                      )}
                       <button
                         type="button"
                         onClick={() => setEditImages((prev) => prev.filter((i) => i.id !== img.id))}
@@ -1410,14 +1444,29 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
                 <div className="mt-6 pt-4 border-t border-gray-100 dark:border-slate-800">
                   <div className="flex flex-wrap gap-2">
                     {selectedNote.images.map((img) => (
-                      <img
-                        key={img.id}
-                        src={img.data}
-                        alt={img.name}
-                        className="w-24 h-24 object-cover rounded-lg border border-gray-200 dark:border-slate-700 cursor-zoom-in hover:opacity-90 transition-opacity"
-                        onDoubleClick={() => handleImageDoubleClick(img)}
-                        onContextMenu={(e) => handleImageContextMenu(e, img, false)}
-                      />
+                      isImageAttachment(img) ? (
+                        <img
+                          key={img.id}
+                          src={img.data}
+                          alt={img.name}
+                          className="w-24 h-24 object-cover rounded-lg border border-gray-200 dark:border-slate-700 cursor-zoom-in hover:opacity-90 transition-opacity"
+                          onDoubleClick={() => handleImageDoubleClick(img)}
+                          onContextMenu={(e) => handleImageContextMenu(e, img, false)}
+                        />
+                      ) : (
+                        <div
+                          key={img.id}
+                          className="w-24 h-24 rounded-lg border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 flex flex-col items-center justify-center cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
+                          onDoubleClick={() => handleImageDoubleClick(img)}
+                          onContextMenu={(e) => handleImageContextMenu(e, img, false)}
+                          title={img.name}
+                        >
+                          <File className="w-8 h-8 text-gray-400 dark:text-slate-500" />
+                          <span className="mt-1 text-[11px] font-semibold text-gray-500 dark:text-slate-400 max-w-[90%] truncate">
+                            {getAttachmentBadge(img)}
+                          </span>
+                        </div>
+                      )
                     ))}
                   </div>
                 </div>
@@ -1450,7 +1499,8 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
       {/* ── Context Menu ── */}
       {contextMenu && (() => {
         const menuW = 168;
-        const menuH = contextMenu.inEditor ? 132 : 96;
+        const menuItems = (isImageAttachment(contextMenu.img) ? 1 : 0) + 1 + (contextMenu.inEditor ? 1 : 0);
+        const menuH = menuItems * 36 + (contextMenu.inEditor ? 8 : 0) + 8;
         const x = contextMenu.x + menuW > window.innerWidth ? contextMenu.x - menuW : contextMenu.x;
         const y = contextMenu.y + menuH > window.innerHeight ? contextMenu.y - menuH : contextMenu.y;
         return (
@@ -1459,13 +1509,15 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
             style={{ top: y, left: x }}
             onClick={(e) => e.stopPropagation()}
           >
-            <button
-              className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800 flex items-center gap-2"
-              onClick={() => { setLightboxImg(contextMenu.img); setContextMenu(null); }}
-            >
-              <Eye className="w-4 h-4 flex-shrink-0 text-gray-400" />
-              {t.viewFile}
-            </button>
+            {isImageAttachment(contextMenu.img) && (
+              <button
+                className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800 flex items-center gap-2"
+                onClick={() => { setLightboxImg(contextMenu.img); setContextMenu(null); }}
+              >
+                <Eye className="w-4 h-4 flex-shrink-0 text-gray-400" />
+                {t.viewFile}
+              </button>
+            )}
             <button
               className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800 flex items-center gap-2"
               onClick={() => { downloadImage(contextMenu.img); setContextMenu(null); }}
@@ -1510,7 +1562,7 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
             onClick={(e) => { e.stopPropagation(); downloadImage(lightboxImg); }}
           >
             <ImagePlus className="w-4 h-4" />
-            {t.downloadImage}
+            {t.downloadFile}
           </button>
           <img
             src={lightboxImg.data}
