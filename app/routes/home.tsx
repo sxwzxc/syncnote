@@ -1380,7 +1380,7 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
                 </div>
                 {editImages.length === 0 && (
                   <p className="mt-1 text-xs text-gray-300 dark:text-slate-600">
-                    {lang === "zh" ? "点击 + 添加图片，或拖拽 / Ctrl+V 粘贴" : "Click + to add · drag & drop · Ctrl+V to paste"}
+                    {lang === "zh" ? "点击 + 添加文件，或拖拽 / Ctrl+V 粘贴" : "Click + to add files · drag & drop · Ctrl+V to paste"}
                   </p>
                 )}
               </div>
