@@ -20,6 +20,9 @@ import {
   Moon,
   Languages,
   RefreshCw,
+  Paperclip,
+  Download,
+  File,
 } from "lucide-react";
 
 export function meta() {
@@ -106,13 +109,13 @@ type Translations = {
   liveSync: string;
   remoteUpdated: string;
   incorrectPassword: string;
-  addImage: string;
-  images: string;
-  deleteImage: string;
+  addFile: string;
+  attachments: string;
+  deleteFile: string;
   deleteNote: string;
   confirmDelete: (title: string) => string;
-  viewImage: string;
-  downloadImage: string;
+  viewFile: string;
+  downloadFile: string;
 };
 
 type Lang = "en" | "zh";
@@ -155,13 +158,13 @@ const translations: Record<Lang, Translations> = {
     liveSync: "Live sync",
     remoteUpdated: "Updated from another device",
     incorrectPassword: "Incorrect password. Please try again.",
-    addImage: "Add image",
-    images: "Images",
-    deleteImage: "Remove image",
+    addFile: "Add file",
+    attachments: "Attachments",
+    deleteFile: "Remove file",
     deleteNote: "Delete note",
     confirmDelete: (title: string) => `Delete "${title}"?`,
-    viewImage: "View full size",
-    downloadImage: "Download",
+    viewFile: "View full size",
+    downloadFile: "Download",
   },
   zh: {
     signIn: "登录",
@@ -200,13 +203,13 @@ const translations: Record<Lang, Translations> = {
     liveSync: "实时同步",
     remoteUpdated: "已同步其他设备的更改",
     incorrectPassword: "密码错误，请重试。",
-    addImage: "添加图片",
-    images: "图片",
-    deleteImage: "删除图片",
+    addFile: "添加文件",
+    attachments: "附件",
+    deleteFile: "删除文件",
     deleteNote: "删除笔记",
     confirmDelete: (title: string) => `确定删除"${title}"？`,
-    viewImage: "查看大图",
-    downloadImage: "下载图片",
+    viewFile: "查看大图",
+    downloadFile: "下载",
   },
 };
 
@@ -761,63 +764,50 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
     };
   }, []);
 
-  // ── Image handlers ───────────────────────────────────────────────────────────
-  const handleImageFiles = useCallback((files: FileList | File[]) => {
-    Array.from(files)
-      .filter((f) => f.type.startsWith("image/"))
-      .forEach((file) => {
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-          const data = ev.target?.result as string;
-          setEditImages((prev) => [
-            ...prev,
-            { id: crypto.randomUUID(), name: file.name || "image", data, type: file.type },
-          ]);
-        };
-        reader.readAsDataURL(file);
-      });
+  // ── File handlers (supports all file types) ──────────────────────────────────
+  const handleFiles = useCallback((files: FileList | File[]) => {
+    Array.from(files).forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const data = ev.target?.result as string;
+        setEditImages((prev) => [
+          ...prev,
+          { id: crypto.randomUUID(), name: file.name || "file", data, type: file.type },
+        ]);
+      };
+      reader.readAsDataURL(file);
+    });
   }, []);
 
   const handleFileInput = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       if (e.target.files) {
-        handleImageFiles(e.target.files);
+        handleFiles(e.target.files);
         e.target.value = "";
       }
     },
-    [handleImageFiles]
+    [handleFiles]
   );
 
   const handlePaste = useCallback(
     (e: React.ClipboardEvent) => {
       if (!isEditingRef.current) return;
-      // Check clipboard items first — this captures screenshots and copied images
-      const items = Array.from(e.clipboardData.items);
-      const imageItems = items.filter((item) => item.type.startsWith("image/"));
-      if (imageItems.length > 0) {
-        e.preventDefault();
-        const files = imageItems.map((item) => item.getAsFile()).filter((f): f is File => f !== null);
-        handleImageFiles(files);
-        return;
-      }
-      // Fall back to file list (e.g. dragged-and-pasted files)
-      const imageFiles = Array.from(e.clipboardData.files).filter((f) =>
-        f.type.startsWith("image/")
-      );
-      if (imageFiles.length === 0) return;
+      // Accept all files from clipboard
+      const files = Array.from(e.clipboardData.files);
+      if (files.length === 0) return;
       e.preventDefault();
-      handleImageFiles(imageFiles);
+      handleFiles(files);
     },
-    [handleImageFiles]
+    [handleFiles]
   );
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
       if (!isEditingRef.current) return;
-      if (e.dataTransfer.files) handleImageFiles(e.dataTransfer.files);
+      if (e.dataTransfer.files) handleFiles(e.dataTransfer.files);
     },
-    [handleImageFiles]
+    [handleFiles]
   );
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -1334,7 +1324,7 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
                       <button
                         type="button"
                         onClick={() => setEditImages((prev) => prev.filter((i) => i.id !== img.id))}
-                        title={t.deleteImage}
+                        title={t.deleteFile}
                         className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity"
                       >
                         <X className="w-2.5 h-2.5" />
@@ -1342,13 +1332,12 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
                     </div>
                   ))}
                   <label
-                    title={t.addImage}
+                    title={t.addFile}
                     className="w-16 h-16 flex-shrink-0 flex flex-col items-center justify-center border-2 border-dashed border-gray-200 dark:border-slate-700 rounded-lg cursor-pointer hover:border-indigo-400 dark:hover:border-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
                   >
-                    <ImagePlus className="w-4 h-4 text-gray-300 dark:text-slate-600" />
+                    <Paperclip className="w-4 h-4 text-gray-300 dark:text-slate-600" />
                     <input
                       type="file"
-                      accept="image/*"
                       multiple
                       className="hidden"
                       onChange={handleFileInput}
@@ -1475,14 +1464,14 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
               onClick={() => { setLightboxImg(contextMenu.img); setContextMenu(null); }}
             >
               <Eye className="w-4 h-4 flex-shrink-0 text-gray-400" />
-              {t.viewImage}
+              {t.viewFile}
             </button>
             <button
               className="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800 flex items-center gap-2"
               onClick={() => { downloadImage(contextMenu.img); setContextMenu(null); }}
             >
-              <ImagePlus className="w-4 h-4 flex-shrink-0 text-gray-400" />
-              {t.downloadImage}
+              <Download className="w-4 h-4 flex-shrink-0 text-gray-400" />
+              {t.downloadFile}
             </button>
             {contextMenu.inEditor && (
               <>
@@ -1495,7 +1484,7 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
                   }}
                 >
                   <Trash2 className="w-4 h-4 flex-shrink-0" />
-                  {t.deleteImage}
+                  {t.deleteFile}
                 </button>
               </>
             )}
