@@ -23,10 +23,6 @@ import {
   Paperclip,
   Download,
   File,
-  Settings,
-  MapPin,
-  CloudSun,
-  Globe,
 } from "lucide-react";
 
 export function meta() {
@@ -64,7 +60,6 @@ type AutoSaveStatus = "idle" | "pending" | "saving" | "saved" | "error";
 // ── Constants ─────────────────────────────────────────────────────────────────
 const API_BASE = "/api/notes";
 const AUTH_API = "/api/auth";
-const SETTINGS_API = "/api/settings";
 const POLL_INTERVAL_MS = 600;   // poll every 0.6 s for near-real-time sync
 const AUTO_SAVE_DELAY_MS = 400; // debounce auto-save
 const MAX_NOTE_BYTES = 25 * 1024 * 1024;
@@ -121,21 +116,6 @@ type Translations = {
   confirmDelete: (title: string) => string;
   viewFile: string;
   downloadFile: string;
-  settings: string;
-  settingsTitle: string;
-  weatherMode: string;
-  weatherModeAuto: string;
-  weatherModeManual: string;
-  weatherLocation: string;
-  weatherLocationPlaceholder: string;
-  saveSettings: string;
-  settingsSaved: string;
-  refreshWeather: string;
-  ipAddress: string;
-  currentLocation: string;
-  currentWeather: string;
-  weatherUnavailable: string;
-  locationRequired: string;
 };
 
 type Lang = "en" | "zh";
@@ -185,21 +165,6 @@ const translations: Record<Lang, Translations> = {
     confirmDelete: (title: string) => `Delete "${title}"?`,
     viewFile: "View full size",
     downloadFile: "Download",
-    settings: "Settings",
-    settingsTitle: "Weather settings",
-    weatherMode: "Weather location mode",
-    weatherModeAuto: "Auto (use my location)",
-    weatherModeManual: "Manual",
-    weatherLocation: "Weather location",
-    weatherLocationPlaceholder: "Enter city name, e.g. Tokyo",
-    saveSettings: "Save settings",
-    settingsSaved: "Settings saved",
-    refreshWeather: "Refresh weather",
-    ipAddress: "IP",
-    currentLocation: "Location",
-    currentWeather: "Weather",
-    weatherUnavailable: "Unable to fetch weather data",
-    locationRequired: "Please enter a location",
   },
   zh: {
     signIn: "登录",
@@ -245,21 +210,6 @@ const translations: Record<Lang, Translations> = {
     confirmDelete: (title: string) => `确定删除"${title}"？`,
     viewFile: "查看大图",
     downloadFile: "下载",
-    settings: "设置",
-    settingsTitle: "天气设置",
-    weatherMode: "天气地点模式",
-    weatherModeAuto: "自动（使用我的位置）",
-    weatherModeManual: "手动",
-    weatherLocation: "天气地点",
-    weatherLocationPlaceholder: "输入城市名称，例如：北京",
-    saveSettings: "保存设置",
-    settingsSaved: "设置已保存",
-    refreshWeather: "刷新天气",
-    ipAddress: "IP",
-    currentLocation: "位置",
-    currentWeather: "天气",
-    weatherUnavailable: "无法获取天气数据",
-    locationRequired: "请输入天气地点",
   },
 };
 
@@ -293,59 +243,6 @@ function getAttachmentBadge(file: NoteImage): string {
   if (file.type.startsWith("video/")) return "VIDEO";
   if (file.type.includes("zip") || file.type.includes("compressed") || file.type.includes("tar")) return "ZIP";
   return "FILE";
-}
-
-function weatherCodeToText(code: number, lang: Lang): string {
-  const zhMap: Record<number, string> = {
-    0: "晴",
-    1: "大致晴朗",
-    2: "局部多云",
-    3: "阴",
-    45: "雾",
-    48: "冻雾",
-    51: "小毛毛雨",
-    53: "毛毛雨",
-    55: "强毛毛雨",
-    61: "小雨",
-    63: "中雨",
-    65: "大雨",
-    71: "小雪",
-    73: "中雪",
-    75: "大雪",
-    80: "小阵雨",
-    81: "阵雨",
-    82: "强阵雨",
-    95: "雷暴",
-    96: "雷暴夹小冰雹",
-    99: "雷暴夹大冰雹",
-  };
-
-  const enMap: Record<number, string> = {
-    0: "Clear",
-    1: "Mostly clear",
-    2: "Partly cloudy",
-    3: "Overcast",
-    45: "Fog",
-    48: "Rime fog",
-    51: "Light drizzle",
-    53: "Drizzle",
-    55: "Heavy drizzle",
-    61: "Light rain",
-    63: "Rain",
-    65: "Heavy rain",
-    71: "Light snow",
-    73: "Snow",
-    75: "Heavy snow",
-    80: "Light showers",
-    81: "Showers",
-    82: "Heavy showers",
-    95: "Thunderstorm",
-    96: "Thunderstorm + hail",
-    99: "Severe thunderstorm + hail",
-  };
-
-  const map = lang === "zh" ? zhMap : enMap;
-  return map[code] ?? (lang === "zh" ? "未知天气" : "Unknown");
 }
 
 function isAuthValid(): boolean {
@@ -578,17 +475,6 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
   const [lightboxImg, setLightboxImg] = useState<NoteImage | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; img: NoteImage; inEditor: boolean } | null>(null);
   const [imagesPanelHeight, setImagesPanelHeight] = useState(112);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [weatherMode, setWeatherMode] = useState<"auto" | "manual">("auto");
-  const [weatherLocation, setWeatherLocation] = useState("");
-  const [isSavingSettings, setIsSavingSettings] = useState(false);
-  const [settingsMessage, setSettingsMessage] = useState<string | null>(null);
-  const [settingsLoaded, setSettingsLoaded] = useState(false);
-  const [ipAddress, setIpAddress] = useState("Unknown");
-  const [resolvedLocation, setResolvedLocation] = useState("—");
-  const [weatherSummary, setWeatherSummary] = useState("—");
-  const [isWeatherLoading, setIsWeatherLoading] = useState(false);
-  const [weatherError, setWeatherError] = useState<string | null>(null);
 
   // Refs to access latest state in async callbacks
   const selectedNoteRef = useRef<Note | null>(null);
@@ -670,148 +556,6 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
   // Ref to always have the current translation without adding to useCallback deps
   const tRef = useRef(t);
   useEffect(() => { tRef.current = t; }, [t]);
-
-  // ── Settings & Weather ──────────────────────────────────────────────────────
-  const loadSettings = useCallback(async () => {
-    try {
-      const res = await fetch(SETTINGS_API);
-      if (!res.ok) throw new Error("failed");
-      const data = await res.json();
-      setWeatherMode(data.weatherMode === "manual" ? "manual" : "auto");
-      setWeatherLocation(typeof data.weatherLocation === "string" ? data.weatherLocation : "");
-      setIpAddress(typeof data.ip === "string" && data.ip ? data.ip : "Unknown");
-    } catch {
-      setIpAddress("Unknown");
-    } finally {
-      setSettingsLoaded(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadSettings();
-  }, [loadSettings]);
-
-  const saveWeatherSettings = useCallback(async (nextMode: "auto" | "manual", nextLocation: string) => {
-    if (nextMode === "manual" && !nextLocation.trim()) {
-      setSettingsMessage(tRef.current.locationRequired);
-      return false;
-    }
-
-    setIsSavingSettings(true);
-    try {
-      const res = await fetch(SETTINGS_API, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ weatherMode: nextMode, weatherLocation: nextLocation.trim() }),
-      });
-      if (!res.ok) throw new Error("save failed");
-      setSettingsMessage(tRef.current.settingsSaved);
-      setTimeout(() => setSettingsMessage((msg: string | null) => (msg === tRef.current.settingsSaved ? null : msg)), 2000);
-      return true;
-    } catch {
-      setSettingsMessage(tRef.current.saveError);
-      return false;
-    } finally {
-      setIsSavingSettings(false);
-    }
-  }, []);
-
-  const getCurrentPosition = useCallback(() => {
-    return new Promise<GeolocationPosition>((resolve, reject) => {
-      if (!navigator.geolocation) {
-        reject(new Error("Geolocation is not supported"));
-        return;
-      }
-      navigator.geolocation.getCurrentPosition(resolve, reject, {
-        enableHighAccuracy: false,
-        timeout: 8000,
-        maximumAge: 60 * 1000,
-      });
-    });
-  }, []);
-
-  const fetchWeatherByCoordinates = useCallback(async (latitude: number, longitude: number, labelHint?: string) => {
-    let locationLabel = labelHint;
-    if (!locationLabel) {
-      const reverseRes = await fetch(
-        `https://geocoding-api.open-meteo.com/v1/reverse?latitude=${latitude}&longitude=${longitude}&count=1&language=${lang === "zh" ? "zh" : "en"}`
-      );
-      if (reverseRes.ok) {
-        const reverseData = await reverseRes.json();
-        const first = reverseData?.results?.[0];
-        if (first) {
-          locationLabel = [first.name, first.admin1, first.country].filter(Boolean).join(", ");
-        }
-      }
-    }
-
-    const weatherRes = await fetch(
-      `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weather_code,wind_speed_10m&timezone=auto`
-    );
-    if (!weatherRes.ok) throw new Error("weather failed");
-
-    const weatherData = await weatherRes.json();
-    const current = weatherData?.current;
-    const code = Number(current?.weather_code ?? -1);
-    const temp = typeof current?.temperature_2m === "number" ? `${Math.round(current.temperature_2m)}°C` : "";
-    const wind = typeof current?.wind_speed_10m === "number" ? `${Math.round(current.wind_speed_10m)} km/h` : "";
-    const desc = weatherCodeToText(code, lang);
-
-    setResolvedLocation(locationLabel || `${latitude.toFixed(3)}, ${longitude.toFixed(3)}`);
-    setWeatherSummary([desc, temp, wind].filter(Boolean).join(" · "));
-  }, [lang]);
-
-  const fetchWeatherByManualLocation = useCallback(async (locationName: string) => {
-    const query = locationName.trim();
-    if (!query) throw new Error(tRef.current.locationRequired);
-
-    const searchRes = await fetch(
-      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=1&language=${lang === "zh" ? "zh" : "en"}&format=json`
-    );
-    if (!searchRes.ok) throw new Error("search failed");
-    const searchData = await searchRes.json();
-    const first = searchData?.results?.[0];
-    if (!first) throw new Error(tRef.current.weatherUnavailable);
-
-    const label = [first.name, first.admin1, first.country].filter(Boolean).join(", ");
-    await fetchWeatherByCoordinates(first.latitude, first.longitude, label);
-  }, [fetchWeatherByCoordinates, lang]);
-
-  const refreshWeather = useCallback(async () => {
-    setIsWeatherLoading(true);
-    setWeatherError(null);
-    try {
-      if (weatherMode === "auto") {
-        try {
-          const pos = await getCurrentPosition();
-          await fetchWeatherByCoordinates(pos.coords.latitude, pos.coords.longitude);
-        } catch {
-          const ipGeoRes = await fetch("https://ipapi.co/json/");
-          if (!ipGeoRes.ok) throw new Error("ip geo failed");
-          const ipGeo = await ipGeoRes.json();
-          if (typeof ipGeo?.latitude !== "number" || typeof ipGeo?.longitude !== "number") {
-            throw new Error("ip geo invalid");
-          }
-          const label = [ipGeo.city, ipGeo.region, ipGeo.country_name].filter(Boolean).join(", ");
-          await fetchWeatherByCoordinates(ipGeo.latitude, ipGeo.longitude, label);
-        }
-      } else {
-        await fetchWeatherByManualLocation(weatherLocation);
-      }
-    } catch {
-      setWeatherSummary("—");
-      setResolvedLocation("—");
-      setWeatherError(tRef.current.weatherUnavailable);
-    } finally {
-      setIsWeatherLoading(false);
-    }
-  }, [fetchWeatherByCoordinates, fetchWeatherByManualLocation, getCurrentPosition, weatherLocation, weatherMode]);
-
-  useEffect(() => {
-    if (!settingsLoaded) return;
-    if (weatherMode !== "auto") return;
-    void refreshWeather();
-  }, [settingsLoaded, weatherMode, refreshWeather]);
 
   // ── Load notes ───────────────────────────────────────────────────────────────
   const loadNotes = useCallback(async () => {
@@ -1393,20 +1137,6 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
               <span title={t.liveSync} className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
             </div>
             <div className="flex items-center gap-0.5 flex-shrink-0">
-              {/* Settings */}
-              <button
-                onClick={() => {
-                  setIsSettingsOpen(true);
-                  setSettingsMessage(null);
-                  if (weatherMode === "auto" || weatherLocation.trim()) {
-                    void refreshWeather();
-                  }
-                }}
-                title={t.settings}
-                className="p-1.5 text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
-              >
-                <Settings className="w-4 h-4" />
-              </button>
               {/* Language toggle */}
               <button
                 onClick={toggleLang}
@@ -1868,125 +1598,6 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
               {lightboxImg.name}
             </p>
           )}
-        </div>
-      )}
-
-      {/* ── Settings Modal ── */}
-      {isSettingsOpen && (
-        <div
-          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[1px] flex items-center justify-center p-4"
-          onClick={() => setIsSettingsOpen(false)}
-        >
-          <div
-            className="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl border border-gray-200 dark:border-slate-700 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-slate-800">
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100">{t.settingsTitle}</h3>
-              <button
-                onClick={() => setIsSettingsOpen(false)}
-                className="p-1 text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300"
-                aria-label="Close"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="px-5 py-4 space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs text-gray-500 dark:text-slate-400">{t.weatherMode}</label>
-                <select
-                  value={weatherMode}
-                  onChange={(e) => {
-                    const nextMode = e.target.value === "manual" ? "manual" : "auto";
-                    setWeatherMode(nextMode);
-                    setSettingsMessage(null);
-                    if (nextMode === "auto") {
-                      void refreshWeather();
-                    }
-                  }}
-                  className="w-full h-9 px-3 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-gray-700 dark:text-slate-300 outline-none focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-900"
-                >
-                  <option value="auto">{t.weatherModeAuto}</option>
-                  <option value="manual">{t.weatherModeManual}</option>
-                </select>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs text-gray-500 dark:text-slate-400">{t.weatherLocation}</label>
-                <input
-                  value={weatherLocation}
-                  onChange={(e) => {
-                    setWeatherLocation(e.target.value);
-                    setSettingsMessage(null);
-                  }}
-                  disabled={weatherMode === "auto"}
-                  placeholder={t.weatherLocationPlaceholder}
-                  className="w-full h-9 px-3 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 disabled:bg-gray-100 dark:disabled:bg-slate-800/60 text-sm text-gray-700 dark:text-slate-300 outline-none focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-900"
-                />
-              </div>
-
-              {/* 单列展示：IP -> 位置 -> 天气 */}
-              <div className="space-y-2">
-                <div className="rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/50 px-3 py-2.5">
-                  <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-gray-400 dark:text-slate-500 mb-1">
-                    <Globe className="w-3.5 h-3.5" />
-                    {t.ipAddress}
-                  </div>
-                  <p className="text-sm text-gray-700 dark:text-slate-300 break-all">{ipAddress}</p>
-                </div>
-
-                <div className="rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/50 px-3 py-2.5">
-                  <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-gray-400 dark:text-slate-500 mb-1">
-                    <MapPin className="w-3.5 h-3.5" />
-                    {t.currentLocation}
-                  </div>
-                  <p className="text-sm text-gray-700 dark:text-slate-300 break-words">{resolvedLocation}</p>
-                </div>
-
-                <div className="rounded-xl border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/50 px-3 py-2.5">
-                  <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-gray-400 dark:text-slate-500 mb-1">
-                    <CloudSun className="w-3.5 h-3.5" />
-                    {t.currentWeather}
-                  </div>
-                  <p className="text-sm text-gray-700 dark:text-slate-300 break-words">
-                    {isWeatherLoading ? t.loading : weatherSummary}
-                  </p>
-                </div>
-              </div>
-
-              {weatherError && (
-                <p className="text-xs text-red-500 dark:text-red-400">{weatherError}</p>
-              )}
-              {settingsMessage && !weatherError && (
-                <p className="text-xs text-emerald-600 dark:text-emerald-400">{settingsMessage}</p>
-              )}
-            </div>
-
-            <div className="px-5 py-3 border-t border-gray-100 dark:border-slate-800 flex items-center justify-end gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => void refreshWeather()}
-                className="h-8 text-xs"
-              >
-                {t.refreshWeather}
-              </Button>
-              <Button
-                size="sm"
-                onClick={async () => {
-                  const ok = await saveWeatherSettings(weatherMode, weatherLocation);
-                  if (ok) {
-                    void refreshWeather();
-                  }
-                }}
-                disabled={isSavingSettings}
-                className="h-8 text-xs"
-              >
-                {isSavingSettings ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : t.saveSettings}
-              </Button>
-            </div>
-          </div>
         </div>
       )}
     </div>

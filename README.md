@@ -14,10 +14,6 @@ A lightweight, password-protected note-taking app with real-time cross-device sy
 - **Image attachments** — Attach images by clicking, dragging, or **pasting** (supports screenshots)
   - Double-click any image to open a full-screen lightbox
   - Right-click for: view full size, download, remove
-- **Weather settings** — Configure weather location behavior in the settings panel
-  - Supports **Auto mode** (browser geolocation first, IP-based fallback)
-  - Supports **Manual city** input with persistence
-  - IP, location, and weather are displayed in one vertical column (weather below location)
 - **Resizable sidebar** — Drag the sidebar edge to adjust its width
 - **Dark / Light theme** — Persisted in `localStorage`
 - **Bilingual UI** — Toggle between English and Chinese at any time
@@ -79,7 +75,6 @@ app/
 edge-functions/
 ├── api/
 │   ├── auth.js            # POST /api/auth — password verification
-│   ├── settings.js        # GET / PUT /api/settings — weather settings + IP info
 │   ├── notes.js           # GET / POST /api/notes
 │   └── notes/[id].js      # GET / PUT / DELETE /api/notes/:id
 node-functions/
@@ -90,7 +85,6 @@ public/                    # Static assets
 ## 🔧 Architecture Notes
 
 - **KV storage** — Each note is stored as a JSON value under its UUID key. An index key (`__index`) holds the list of note IDs and metadata.
-- **Settings persistence** — Weather mode and manual location are stored in EdgeOne KV via `/api/settings`.
 - **Auto-save conflict resolution** — If a remote update arrives while the user has pending local changes, the local version wins (the next auto-save will overwrite the remote).
 - **Note size limit** — 25 MB per note (including base64-encoded images). A size indicator is shown in the editor.
 
