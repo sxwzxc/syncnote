@@ -494,6 +494,7 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
   const pollFnRef = useRef<(() => void) | null>(null);
   const sidebarWidthRef = useRef(220);
   const imagesPanelHeightRef = useRef(112);
+  const hasAutoOpenedLastEditedRef = useRef(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleSaveRef = useRef<() => Promise<void>>(async () => {});
 
@@ -933,6 +934,28 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
       setError(t.loadNoteError);
     }
   };
+
+  // ── Auto-open last edited note on first load ────────────────────────────────
+  useEffect(() => {
+    if (hasAutoOpenedLastEditedRef.current) return;
+    if (isLoading) return;
+
+    if (isEditingRef.current || selectedNoteRef.current) {
+      hasAutoOpenedLastEditedRef.current = true;
+      return;
+    }
+
+    if (notesList.length === 0) {
+      hasAutoOpenedLastEditedRef.current = true;
+      return;
+    }
+
+    const lastEdited = notesList.reduce<NoteIndex>((latest: NoteIndex, current: NoteIndex) =>
+      current.updatedAt > latest.updatedAt ? current : latest
+    );
+    hasAutoOpenedLastEditedRef.current = true;
+    void handleSelectNote(lastEdited.id);
+  }, [isLoading, notesList]);
 
   const handleNewNote = () => {
     if (autoSaveTimerRef.current) {
