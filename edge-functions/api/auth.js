@@ -1,24 +1,9 @@
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-};
-
-function jsonResponse(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      'Content-Type': 'application/json; charset=UTF-8',
-      ...CORS_HEADERS,
-    },
-  });
-}
+import { jsonResponse, handleOptions } from '../_shared.js';
 
 export async function onRequestOptions() {
-  return new Response(null, { status: 204, headers: CORS_HEADERS });
+  return handleOptions();
 }
 
-// POST /api/auth — verify password
 export async function onRequestPost({ request, env }) {
   let body;
   try {
@@ -31,7 +16,6 @@ export async function onRequestPost({ request, env }) {
   const expectedPassword = env.password;
 
   if (!expectedPassword) {
-    // No password configured — access is open
     return jsonResponse({ ok: true });
   }
 

@@ -1,48 +1,26 @@
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-};
+import { jsonResponse, handleOptions, requireKV, errorResponse, MAX_NOTE_BYTES, updateIndex } from '../_shared.js';
 
-// EdgeOne KV max value size is 25 MB
-const MAX_NOTE_BYTES = 25 * 1024 * 1024;
-
-function jsonResponse(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      'Content-Type': 'application/json; charset=UTF-8',
-      ...CORS_HEADERS,
-    },
-  });
-}
-
-// Handle CORS preflight
 export async function onRequestOptions() {
-  return new Response(null, { status: 204, headers: CORS_HEADERS });
+  return handleOptions();
 }
 
-// GET /api/notes — list all notes (returns index with id, title, updatedAt)
 export async function onRequestGet() {
-  // In EdgeOne Pages, KV bindings are injected as global variables (not via env)
-  if (typeof notesKV === 'undefined') {
-    return jsonResponse({ error: 'KV storage binding (notesKV) is not configured. Please bind notesKV in EdgeOne Pages settings.' }, 503);
-  }
+  const kvError = requireKV();
+  if (kvError) return kvError;
+
   try {
     const raw = await notesKV.get('notes_index');
     const index = raw ? JSON.parse(raw) : [];
     return jsonResponse(index);
   } catch (err) {
-    return jsonResponse({ error: 'Failed to load notes: ' + (err && err.message ? err.message : String(err)) }, 500);
+    return errorResponse(err);
   }
 }
 
-// POST /api/notes — create a new note
 export async function onRequestPost({ request }) {
-  // In EdgeOne Pages, KV bindings are injected as global variables (not via env)
-  if (typeof notesKV === 'undefined') {
-    return jsonResponse({ error: 'KV storage binding (notesKV) is not configured. Please bind notesKV in EdgeOne Pages settings.' }, 503);
-  }
+  const kvError = requireKV();
+  if (kvError) return kvError;
+
   let body;
   try {
     body = await request.json();
@@ -62,23 +40,16 @@ export async function onRequestPost({ request }) {
   const now = new Date().toISOString();
   const note = { id, title, content, images, createdAt: now, updatedAt: now };
 
-  // Enforce 25 MB KV size limit
   const noteJson = JSON.stringify(note);
   if (new TextEncoder().encode(noteJson).byteLength > MAX_NOTE_BYTES) {
     return jsonResponse({ error: 'Note size exceeds the 25 MB KV storage limit.' }, 413);
   }
 
   try {
-    // Save the full note
     await notesKV.put(`note_${id}`, noteJson);
-
-    // Update the index
-    const rawIndex = await notesKV.get('notes_index');
-    const index = rawIndex ? JSON.parse(rawIndex) : [];
-    index.unshift({ id, title, updatedAt: now });
-    await notesKV.put('notes_index', JSON.stringify(index));
+    await updateIndex(id, title, now);
   } catch (err) {
-    return jsonResponse({ error: 'Failed to save note: ' + (err && err.message ? err.message : String(err)) }, 500);
+    return errorResponse(err);
   }
 
   return jsonResponse(note, 201);

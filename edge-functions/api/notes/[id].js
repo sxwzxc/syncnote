@@ -1,33 +1,13 @@
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-};
+import { jsonResponse, handleOptions, requireKV, errorResponse, MAX_NOTE_BYTES, updateIndex, removeFromIndex } from '../../_shared.js';
 
-// EdgeOne KV max value size is 25 MB
-const MAX_NOTE_BYTES = 25 * 1024 * 1024;
-
-function jsonResponse(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      'Content-Type': 'application/json; charset=UTF-8',
-      ...CORS_HEADERS,
-    },
-  });
-}
-
-// Handle CORS preflight
 export async function onRequestOptions() {
-  return new Response(null, { status: 204, headers: CORS_HEADERS });
+  return handleOptions();
 }
 
-// GET /api/notes/:id — get a single note
 export async function onRequestGet({ params }) {
-  // In EdgeOne Pages, KV bindings are injected as global variables (not via env)
-  if (typeof notesKV === 'undefined') {
-    return jsonResponse({ error: 'KV storage binding (notesKV) is not configured. Please bind notesKV in EdgeOne Pages settings.' }, 503);
-  }
+  const kvError = requireKV();
+  if (kvError) return kvError;
+
   const { id } = params;
   try {
     const raw = await notesKV.get(`note_${id}`);
@@ -36,16 +16,14 @@ export async function onRequestGet({ params }) {
     }
     return jsonResponse(JSON.parse(raw));
   } catch (err) {
-    return jsonResponse({ error: 'Failed to load note: ' + (err && err.message ? err.message : String(err)) }, 500);
+    return errorResponse(err);
   }
 }
 
-// PUT /api/notes/:id — update a note
 export async function onRequestPut({ request, params }) {
-  // In EdgeOne Pages, KV bindings are injected as global variables (not via env)
-  if (typeof notesKV === 'undefined') {
-    return jsonResponse({ error: 'KV storage binding (notesKV) is not configured. Please bind notesKV in EdgeOne Pages settings.' }, 503);
-  }
+  const kvError = requireKV();
+  if (kvError) return kvError;
+
   const { id } = params;
 
   let body;
@@ -62,6 +40,11 @@ export async function onRequestPut({ request, params }) {
     }
 
     const existing = JSON.parse(raw);
+
+    if (body.updatedAt && body.updatedAt !== existing.updatedAt) {
+      return jsonResponse({ error: 'Conflict: note has been modified by another client. Please refresh and try again.' }, 409);
+    }
+
     const title = (body.title !== undefined ? body.title : existing.title).trim();
     const content = body.content !== undefined ? body.content : existing.content;
     const images = body.images !== undefined ? body.images : (existing.images ?? []);
@@ -73,36 +56,24 @@ export async function onRequestPut({ request, params }) {
     const now = new Date().toISOString();
     const updated = { ...existing, title, content, images, updatedAt: now };
 
-    // Enforce 25 MB KV size limit
     const updatedJson = JSON.stringify(updated);
     if (new TextEncoder().encode(updatedJson).byteLength > MAX_NOTE_BYTES) {
       return jsonResponse({ error: 'Note size exceeds the 25 MB KV storage limit.' }, 413);
     }
 
-    // Save updated note
     await notesKV.put(`note_${id}`, updatedJson);
-
-    // Update the index entry
-    const rawIndex = await notesKV.get('notes_index');
-    const index = rawIndex ? JSON.parse(rawIndex) : [];
-    const idx = index.findIndex((n) => n.id === id);
-    if (idx !== -1) {
-      index[idx] = { id, title, updatedAt: now };
-    }
-    await notesKV.put('notes_index', JSON.stringify(index));
+    await updateIndex(id, title, now);
 
     return jsonResponse(updated);
   } catch (err) {
-    return jsonResponse({ error: 'Failed to update note: ' + (err && err.message ? err.message : String(err)) }, 500);
+    return errorResponse(err);
   }
 }
 
-// DELETE /api/notes/:id — delete a note
 export async function onRequestDelete({ params }) {
-  // In EdgeOne Pages, KV bindings are injected as global variables (not via env)
-  if (typeof notesKV === 'undefined') {
-    return jsonResponse({ error: 'KV storage binding (notesKV) is not configured. Please bind notesKV in EdgeOne Pages settings.' }, 503);
-  }
+  const kvError = requireKV();
+  if (kvError) return kvError;
+
   const { id } = params;
   try {
     const raw = await notesKV.get(`note_${id}`);
@@ -110,17 +81,11 @@ export async function onRequestDelete({ params }) {
       return jsonResponse({ error: 'Note not found' }, 404);
     }
 
-    // Remove the note
     await notesKV.delete(`note_${id}`);
-
-    // Update the index
-    const rawIndex = await notesKV.get('notes_index');
-    const index = rawIndex ? JSON.parse(rawIndex) : [];
-    const filtered = index.filter((n) => n.id !== id);
-    await notesKV.put('notes_index', JSON.stringify(filtered));
+    await removeFromIndex(id);
 
     return jsonResponse({ success: true });
   } catch (err) {
-    return jsonResponse({ error: 'Failed to delete note: ' + (err && err.message ? err.message : String(err)) }, 500);
+    return errorResponse(err);
   }
 }
