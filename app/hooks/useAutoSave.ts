@@ -1,6 +1,6 @@
-import { useCallback, useRef } from "react";
+import { useCallback } from "react";
 import type { Note, NoteImage, AutoSaveStatus } from "~/lib/types";
-import { API_BASE, AUTO_SAVE_DELAY_MS, MAX_NOTE_BYTES } from "~/lib/types";
+import { API_BASE, AUTO_SAVE_DELAY_MS } from "~/lib/types";
 import { imagesChanged } from "~/lib/i18n";
 
 interface UseAutoSaveOptions {
@@ -15,6 +15,9 @@ interface UseAutoSaveOptions {
   setSelectedNote: (note: Note | null) => void;
   setNotesList: React.Dispatch<React.SetStateAction<{ id: string; title: string; updatedAt: string }[]>>;
   wsRef: React.RefObject<WebSocket | null>;
+  autoSaveTimerRef: React.MutableRefObject<ReturnType<typeof setTimeout> | null>;
+  lastSavedRef: React.MutableRefObject<{ title: string; content: string; images: NoteImage[] } | null>;
+  onAfterSave?: () => void;
 }
 
 export function useAutoSave({
@@ -29,16 +32,16 @@ export function useAutoSave({
   setSelectedNote,
   setNotesList,
   wsRef,
+  autoSaveTimerRef,
+  lastSavedRef,
+  onAfterSave,
 }: UseAutoSaveOptions) {
-  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastSavedRef = useRef<{ title: string; content: string; images: NoteImage[] } | null>(null);
-
   const clearAutoSaveTimer = useCallback(() => {
     if (autoSaveTimerRef.current) {
       clearTimeout(autoSaveTimerRef.current);
       autoSaveTimerRef.current = null;
     }
-  }, []);
+  }, [autoSaveTimerRef]);
 
   const doAutoSave = useCallback(async () => {
     autoSaveTimerRef.current = null;
@@ -88,21 +91,20 @@ export function useAutoSave({
       if (_ws && _ws.readyState === WebSocket.OPEN) {
         try { _ws.send(JSON.stringify({ type: 'note_updated', noteId: updated.id, updatedAt: updated.updatedAt })); } catch {}
       }
+      onAfterSave?.();
     } catch {
       setAutoSaveStatus("error");
     }
-  }, [selectedNoteRef, editTitleRef, editContentRef, editImagesRef, isCreatingRef, autoSaveStatusRef, setAutoSaveStatus, setSelectedNote, setNotesList, wsRef]);
+  }, [selectedNoteRef, editTitleRef, editContentRef, editImagesRef, isCreatingRef, autoSaveStatusRef, setAutoSaveStatus, setSelectedNote, setNotesList, wsRef, autoSaveTimerRef, lastSavedRef, onAfterSave]);
 
   const scheduleAutoSave = useCallback(() => {
     if (!selectedNoteRef.current || isCreatingRef.current || isOverLimit) return;
     setAutoSaveStatus("pending");
     clearAutoSaveTimer();
     autoSaveTimerRef.current = setTimeout(doAutoSave, AUTO_SAVE_DELAY_MS);
-  }, [selectedNoteRef, isCreatingRef, isOverLimit, setAutoSaveStatus, clearAutoSaveTimer, doAutoSave]);
+  }, [selectedNoteRef, isCreatingRef, isOverLimit, setAutoSaveStatus, clearAutoSaveTimer, doAutoSave, autoSaveTimerRef]);
 
   return {
-    autoSaveTimerRef,
-    lastSavedRef,
     doAutoSave,
     scheduleAutoSave,
     clearAutoSaveTimer,

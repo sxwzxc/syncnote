@@ -54,6 +54,51 @@ export function useSync({
   const wsConnectedRef = useRef(false);
   const pollFnRef = useRef<(() => void) | null>(null);
   const remoteSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingRemoteNoteRef = useRef<Note | null>(null);
+  const pendingRemoteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const applyRemoteNote = useCallback((updated: Note) => {
+    setSelectedNote(updated);
+    selectedNoteRef.current = updated;
+
+    if (remoteSyncTimerRef.current) clearTimeout(remoteSyncTimerRef.current);
+    setRemoteSyncStatus("updated");
+    remoteSyncTimerRef.current = setTimeout(() => setRemoteSyncStatus("idle"), 3000);
+
+    if (isEditingRef.current) {
+      setEditTitle(updated.title);
+      setEditContent(updated.content);
+      setEditImages(updated.images ?? []);
+      lastSavedRef.current = {
+        title: updated.title,
+        content: updated.content,
+        images: updated.images ?? [],
+      };
+    }
+  }, [selectedNoteRef, isEditingRef, lastSavedRef, setSelectedNote, setEditTitle, setEditContent, setEditImages, setRemoteSyncStatus]);
+
+  const tryApplyPendingRemote = useCallback(() => {
+    const pending = pendingRemoteNoteRef.current;
+    if (!pending) return;
+    pendingRemoteNoteRef.current = null;
+    if (pendingRemoteTimerRef.current) {
+      clearTimeout(pendingRemoteTimerRef.current);
+      pendingRemoteTimerRef.current = null;
+    }
+
+    const hasPendingChanges =
+      autoSaveTimerRef.current !== null ||
+      autoSaveStatusRef.current === "pending" ||
+      autoSaveStatusRef.current === "saving";
+
+    if (hasPendingChanges) {
+      pendingRemoteNoteRef.current = pending;
+      pendingRemoteTimerRef.current = setTimeout(tryApplyPendingRemote, 500);
+      return;
+    }
+
+    applyRemoteNote(pending);
+  }, [applyRemoteNote, autoSaveTimerRef, autoSaveStatusRef]);
 
   const poll = useCallback(async () => {
     try {
@@ -69,35 +114,25 @@ export function useSync({
       if (!remoteEntry) return;
       if (remoteEntry.updatedAt === currentNote.updatedAt) return;
 
+      const noteRes = await fetch(`${API_BASE}/${currentNote.id}`);
+      if (!noteRes.ok) return;
+      const updated: Note = await noteRes.json();
+
       const hasPendingChanges =
         autoSaveTimerRef.current !== null ||
         autoSaveStatusRef.current === "pending" ||
         autoSaveStatusRef.current === "saving";
 
-      if (hasPendingChanges) return;
-
-      const noteRes = await fetch(`${API_BASE}/${currentNote.id}`);
-      if (!noteRes.ok) return;
-      const updated: Note = await noteRes.json();
-      setSelectedNote(updated);
-      selectedNoteRef.current = updated;
-
-      if (remoteSyncTimerRef.current) clearTimeout(remoteSyncTimerRef.current);
-      setRemoteSyncStatus("updated");
-      remoteSyncTimerRef.current = setTimeout(() => setRemoteSyncStatus("idle"), 3000);
-
-      if (isEditingRef.current) {
-        setEditTitle(updated.title);
-        setEditContent(updated.content);
-        setEditImages(updated.images ?? []);
-        lastSavedRef.current = {
-          title: updated.title,
-          content: updated.content,
-          images: updated.images ?? [],
-        };
+      if (hasPendingChanges) {
+        pendingRemoteNoteRef.current = updated;
+        if (pendingRemoteTimerRef.current) clearTimeout(pendingRemoteTimerRef.current);
+        pendingRemoteTimerRef.current = setTimeout(tryApplyPendingRemote, 500);
+        return;
       }
+
+      applyRemoteNote(updated);
     } catch {}
-  }, [selectedNoteRef, isEditingRef, autoSaveTimerRef, autoSaveStatusRef, lastSavedRef, setNotesList, setSelectedNote, setEditTitle, setEditContent, setEditImages, setRemoteSyncStatus]);
+  }, [selectedNoteRef, autoSaveTimerRef, autoSaveStatusRef, setNotesList, applyRemoteNote, tryApplyPendingRemote]);
 
   useEffect(() => {
     pollFnRef.current = poll;
@@ -175,6 +210,7 @@ export function useSync({
       unmounted = true;
       if (wsReconnectTimerRef.current) clearTimeout(wsReconnectTimerRef.current);
       if (wsHeartbeatTimerRef.current) clearInterval(wsHeartbeatTimerRef.current);
+      if (pendingRemoteTimerRef.current) clearTimeout(pendingRemoteTimerRef.current);
       const ws = wsRef.current;
       if (ws) {
         ws.onclose = null;
@@ -184,5 +220,5 @@ export function useSync({
     };
   }, []);
 
-  return { wsSubscribedNoteIdRef, remoteSyncTimerRef } as const;
+  return { wsSubscribedNoteIdRef, remoteSyncTimerRef, tryApplyPendingRemote } as const;
 }

@@ -114,22 +114,10 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
   const isOverLimit = noteSizeBytes > MAX_NOTE_BYTES;
 
   const wsRef = useRef<WebSocket | null>(null);
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSavedRef = useRef<{ title: string; content: string; images: NoteImage[] } | null>(null);
 
-  const { autoSaveTimerRef, lastSavedRef, doAutoSave, scheduleAutoSave, clearAutoSaveTimer } = useAutoSave({
-    selectedNoteRef,
-    editTitleRef,
-    editContentRef,
-    editImagesRef,
-    isCreatingRef,
-    autoSaveStatusRef,
-    isOverLimit,
-    setAutoSaveStatus,
-    setSelectedNote,
-    setNotesList,
-    wsRef,
-  });
-
-  const { wsSubscribedNoteIdRef } = useSync({
+  const { wsSubscribedNoteIdRef, tryApplyPendingRemote } = useSync({
     selectedNoteRef,
     isEditingRef,
     isCreatingRef,
@@ -147,6 +135,23 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
     setAutoSaveStatus,
     setRemoteSyncStatus,
     wsRef,
+  });
+
+  const { doAutoSave, scheduleAutoSave, clearAutoSaveTimer } = useAutoSave({
+    selectedNoteRef,
+    editTitleRef,
+    editContentRef,
+    editImagesRef,
+    isCreatingRef,
+    autoSaveStatusRef,
+    isOverLimit,
+    setAutoSaveStatus,
+    setSelectedNote,
+    setNotesList,
+    wsRef,
+    autoSaveTimerRef,
+    lastSavedRef,
+    onAfterSave: tryApplyPendingRemote,
   });
 
   const subscribeNote = useCallback((noteId: string) => {
