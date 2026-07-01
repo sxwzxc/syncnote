@@ -47,7 +47,7 @@ export async function onRequestPost({ request }) {
   const contentType = body.contentType && typeof body.contentType === 'string' ? body.contentType : undefined;
 
   try {
-    const store = getBlobStore();
+    const store = await getBlobStore();
     const key = `uploads/${crypto.randomUUID()}/${name}`;
     const result = await store.createUploadUrl(key, { expireSeconds, contentType });
     return jsonResponse({ ...result, store: BLOB_STORE_NAME });

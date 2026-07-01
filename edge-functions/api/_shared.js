@@ -1,5 +1,10 @@
-import { getStore } from "@edgeone/pages-blob";
-
+// NOTE: @edgeone/pages-blob is imported LAZILY (dynamic import inside
+// getBlobStore) instead of as a top-level static import. Edge function
+// files are deployed as source and the runtime does not bundle npm
+// dependencies for them — a static `import` here would break module
+// loading for EVERY function that imports _shared.js (including the
+// KV-only auth/notes endpoints). Lazy-loading keeps KV working and
+// only pulls the blob SDK in when blob storage is actually requested.
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
@@ -87,26 +92,30 @@ function kvAdapter() {
 
 // Reuse a single Store instance across requests (it caches STS credentials).
 let _blobStore = null;
-function getBlobStore() {
-  if (!_blobStore) {
-    // Strong consistency guarantees read-after-write, which the index
-    // read-modify-write and conflict detection rely on.
-    _blobStore = getStore({ name: BLOB_STORE_NAME, consistency: 'strong' });
-  }
+async function getBlobStore() {
+  if (_blobStore) return _blobStore;
+  // Dynamic import: only resolved when blob storage is actually used.
+  // Inside EdgeOne Pages Functions the SDK is auto-authenticated.
+  const { getStore } = await import("@edgeone/pages-blob");
+  // Strong consistency guarantees read-after-write, which the index
+  // read-modify-write and conflict detection rely on.
+  _blobStore = getStore({ name: BLOB_STORE_NAME, consistency: 'strong' });
   return _blobStore;
 }
 
 function blobAdapter() {
-  const store = getBlobStore();
   return {
     backend: 'blob',
     async getJSON(key) {
+      const store = await getBlobStore();
       return await store.get(key, { type: 'json' });
     },
     async putJSON(key, value) {
+      const store = await getBlobStore();
       await store.setJSON(key, value);
     },
     async delete(key) {
+      const store = await getBlobStore();
       await store.delete(key);
     },
   };
