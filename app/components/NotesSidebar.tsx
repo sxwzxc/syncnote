@@ -1,7 +1,7 @@
-import { FileText, Loader2, PlusCircle, Languages, Moon, Sun, LogOut } from "lucide-react";
+import { FileText, Loader2, PlusCircle, Languages, Moon, Sun, LogOut, Database } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { cn } from "~/lib/utils";
-import type { NoteIndex } from "~/lib/types";
+import type { NoteIndex, StorageType } from "~/lib/types";
 import type { Translations, Lang } from "~/lib/i18n";
 import { formatDate } from "~/lib/i18n";
 
@@ -15,8 +15,10 @@ interface NotesSidebarProps {
   t: Translations;
   lang: Lang;
   theme: "light" | "dark";
+  storage: StorageType;
   toggleLang: () => void;
   toggleTheme: () => void;
+  onStorageChange: (next: StorageType) => void;
   onLogout: () => void;
   onNewNote: () => void;
   onSelectNote: (id: string) => void;
@@ -33,8 +35,10 @@ export function NotesSidebar({
   t,
   lang,
   theme,
+  storage,
   toggleLang,
   toggleTheme,
+  onStorageChange,
   onLogout,
   onNewNote,
   onSelectNote,
@@ -85,6 +89,33 @@ export function NotesSidebar({
             >
               <LogOut className="w-4 h-4" />
             </button>
+          </div>
+        </div>
+        <div className="px-3 pb-2.5 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <Database className="w-3.5 h-3.5 text-gray-400 dark:text-slate-500 flex-shrink-0" />
+            <span className="text-xs text-gray-500 dark:text-slate-400 truncate">{t.storage}</span>
+          </div>
+          <div
+            role="group"
+            aria-label={t.storage}
+            className="flex items-center gap-0.5 bg-gray-100 dark:bg-slate-800 rounded-lg p-0.5 flex-shrink-0"
+          >
+            {(["kv", "blob"] as const).map((opt) => (
+              <button
+                key={opt}
+                onClick={() => onStorageChange(opt)}
+                title={opt === "kv" ? "EdgeOne KV" : "EdgeOne Pages Blob"}
+                className={cn(
+                  "px-2.5 py-1 text-xs font-medium rounded-md transition-colors cursor-pointer",
+                  storage === opt
+                    ? "bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm"
+                    : "text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300",
+                )}
+              >
+                {opt === "kv" ? t.storageKV : t.storageBlob}
+              </button>
+            ))}
           </div>
         </div>
         <div className="px-3 pb-3">

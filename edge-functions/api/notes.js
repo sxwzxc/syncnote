@@ -1,16 +1,26 @@
-import { jsonResponse, handleOptions, requireKV, errorResponse, MAX_NOTE_BYTES, updateIndex } from '../_shared.js';
+import {
+  jsonResponse,
+  handleOptions,
+  requireStorage,
+  errorResponse,
+  MAX_NOTE_BYTES,
+  updateIndex,
+  getStorageParam,
+  getAdapter,
+} from '../_shared.js';
 
 export async function onRequestOptions() {
   return handleOptions();
 }
 
-export async function onRequestGet() {
-  const kvError = requireKV();
-  if (kvError) return kvError;
+export async function onRequestGet({ request }) {
+  const backend = getStorageParam(request);
+  const storageError = requireStorage(backend);
+  if (storageError) return storageError;
 
   try {
-    const raw = await notesKV.get('notes_index');
-    const index = raw ? JSON.parse(raw) : [];
+    const adapter = getAdapter(backend);
+    const index = (await adapter.getJSON('notes_index')) ?? [];
     return jsonResponse(index);
   } catch (err) {
     return errorResponse(err);
@@ -18,8 +28,9 @@ export async function onRequestGet() {
 }
 
 export async function onRequestPost({ request }) {
-  const kvError = requireKV();
-  if (kvError) return kvError;
+  const backend = getStorageParam(request);
+  const storageError = requireStorage(backend);
+  if (storageError) return storageError;
 
   let body;
   try {
@@ -42,12 +53,13 @@ export async function onRequestPost({ request }) {
 
   const noteJson = JSON.stringify(note);
   if (new TextEncoder().encode(noteJson).byteLength > MAX_NOTE_BYTES) {
-    return jsonResponse({ error: 'Note size exceeds the 25 MB KV storage limit.' }, 413);
+    return jsonResponse({ error: 'Note size exceeds the 25 MB storage limit.' }, 413);
   }
 
   try {
-    await notesKV.put(`note_${id}`, noteJson);
-    await updateIndex(id, title, now);
+    const adapter = getAdapter(backend);
+    await adapter.putJSON(`note_${id}`, note);
+    await updateIndex(adapter, id, title, now);
   } catch (err) {
     return errorResponse(err);
   }

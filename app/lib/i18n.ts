@@ -49,6 +49,11 @@ export type Translations = {
   downloadFile: string;
   dragResizeHint: string;
   addFileHint: string;
+  storage: string;
+  storageKV: string;
+  storageBlob: string;
+  storageSwitched: (backend: string) => string;
+  storageUnavailable: (backend: string) => string;
 };
 
 const translations: Record<Lang, Translations> = {
@@ -98,6 +103,11 @@ const translations: Record<Lang, Translations> = {
     downloadFile: "Download",
     dragResizeHint: "Drag to resize",
     addFileHint: "Click + to add files · drag & drop · Ctrl+V to paste",
+    storage: "Storage",
+    storageKV: "KV",
+    storageBlob: "Blob",
+    storageSwitched: (backend: string) => `Switched to ${backend.toUpperCase()} storage`,
+    storageUnavailable: (backend: string) => `${backend.toUpperCase()} storage is unavailable, reverted to previous.`,
   },
   zh: {
     signIn: "登录",
@@ -145,6 +155,11 @@ const translations: Record<Lang, Translations> = {
     downloadFile: "下载",
     dragResizeHint: "拖动调整大小",
     addFileHint: "点击 + 添加文件，或拖拽 / Ctrl+V 粘贴",
+    storage: "存储",
+    storageKV: "KV",
+    storageBlob: "Blob",
+    storageSwitched: (backend: string) => `已切换到 ${backend.toUpperCase()} 存储`,
+    storageUnavailable: (backend: string) => `${backend.toUpperCase()} 存储不可用，已回退到原存储。`,
   },
 };
 

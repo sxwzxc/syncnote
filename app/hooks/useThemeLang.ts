@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { LANG_STORAGE_KEY, THEME_STORAGE_KEY } from "~/lib/types";
+import { LANG_STORAGE_KEY, THEME_STORAGE_KEY, STORAGE_STORAGE_KEY } from "~/lib/types";
 import type { Lang } from "~/lib/i18n";
+import type { StorageType } from "~/lib/types";
 
 export function useTheme() {
   const [theme, setTheme] = useState<"light" | "dark">("light");
@@ -42,4 +43,20 @@ export function useLang() {
   }, []);
 
   return { lang, toggleLang } as const;
+}
+
+export function useStorage() {
+  const [storage, setStorageState] = useState<StorageType>("kv");
+
+  useEffect(() => {
+    const saved = localStorage.getItem(STORAGE_STORAGE_KEY) as StorageType | null;
+    if (saved === "kv" || saved === "blob") setStorageState(saved);
+  }, []);
+
+  const setStorage = useCallback((next: StorageType) => {
+    setStorageState(next);
+    localStorage.setItem(STORAGE_STORAGE_KEY, next);
+  }, []);
+
+  return { storage, setStorage } as const;
 }

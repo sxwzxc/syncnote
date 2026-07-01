@@ -1,6 +1,6 @@
 import { useCallback } from "react";
-import type { Note, NoteImage, AutoSaveStatus } from "~/lib/types";
-import { API_BASE, AUTO_SAVE_DELAY_MS } from "~/lib/types";
+import type { Note, NoteImage, AutoSaveStatus, StorageType } from "~/lib/types";
+import { notesApiUrl, AUTO_SAVE_DELAY_MS } from "~/lib/types";
 import { imagesChanged } from "~/lib/i18n";
 
 interface UseAutoSaveOptions {
@@ -10,6 +10,7 @@ interface UseAutoSaveOptions {
   editImagesRef: React.RefObject<NoteImage[]>;
   isCreatingRef: React.RefObject<boolean>;
   autoSaveStatusRef: React.RefObject<AutoSaveStatus>;
+  storageRef: React.MutableRefObject<StorageType>;
   isOverLimit: boolean;
   setAutoSaveStatus: (status: AutoSaveStatus) => void;
   setSelectedNote: (note: Note | null) => void;
@@ -27,6 +28,7 @@ export function useAutoSave({
   editImagesRef,
   isCreatingRef,
   autoSaveStatusRef,
+  storageRef,
   isOverLimit,
   setAutoSaveStatus,
   setSelectedNote,
@@ -65,7 +67,7 @@ export function useAutoSave({
 
     setAutoSaveStatus("saving");
     try {
-      const res = await fetch(`${API_BASE}/${note.id}`, {
+      const res = await fetch(notesApiUrl(storageRef.current, note.id), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, content, images }),
@@ -95,7 +97,7 @@ export function useAutoSave({
     } catch {
       setAutoSaveStatus("error");
     }
-  }, [selectedNoteRef, editTitleRef, editContentRef, editImagesRef, isCreatingRef, autoSaveStatusRef, setAutoSaveStatus, setSelectedNote, setNotesList, wsRef, autoSaveTimerRef, lastSavedRef, onAfterSave]);
+  }, [selectedNoteRef, editTitleRef, editContentRef, editImagesRef, isCreatingRef, autoSaveStatusRef, storageRef, setAutoSaveStatus, setSelectedNote, setNotesList, wsRef, autoSaveTimerRef, lastSavedRef, onAfterSave]);
 
   const scheduleAutoSave = useCallback(() => {
     if (!selectedNoteRef.current || isCreatingRef.current || isOverLimit) return;

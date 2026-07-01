@@ -9,6 +9,7 @@
 ## ✨ 功能特性
 
 - **密码保护** — 使用统一共享密码访问所有笔记，登录状态保持 30 天
+- **双存储后端** — 侧边栏顶部一键切换 **EdgeOne KV** 与 **EdgeOne Pages Blob**，两套数据完全独立
 - **实时同步** — 通过 WebSocket 推送 + HTTP 轮询兜底，笔记变更即时同步到所有设备
 - **自动保存** — 停止输入 800 ms 后自动保存，无需手动操作
 - **图片附件** — 支持点击、拖拽或**粘贴**（含截图）方式添加图片
@@ -28,7 +29,7 @@
 | 样式 | Tailwind CSS v4 |
 | 图标 | Lucide React |
 | 构建 | Vite |
-| 存储 | EdgeOne KV |
+| 存储 | EdgeOne KV + EdgeOne Pages Blob（`@edgeone/pages-blob`） |
 | 运行时 | EdgeOne Pages Functions（Edge + Node.js） |
 | 实时通信 | WebSocket（node-functions/sync.js）+ 轮询 |
 
@@ -75,8 +76,10 @@ app/
 edge-functions/
 ├── api/
 │   ├── auth.js            # POST /api/auth — 密码验证
-│   ├── notes.js           # GET / POST /api/notes
-│   └── notes/[id].js      # GET / PUT / DELETE /api/notes/:id
+│   ├── notes.js           # GET / POST /api/notes        (?storage=kv|blob)
+│   ├── notes/[id].js      # GET / PUT / DELETE /api/notes/:id (?storage=kv|blob)
+│   ├── storage.js         # GET /api/storage — 存储后端可用性检查
+│   └── upload-url.js      # POST /api/upload-url — Blob 预签名直传地址
 node-functions/
 └── sync.js                # WebSocket 服务，用于实时同步
 public/                    # 静态资源
@@ -84,7 +87,8 @@ public/                    # 静态资源
 
 ## 🔧 架构说明
 
-- **KV 存储** — 每篇笔记以 UUID 为键存储为 JSON，`__index` 键维护笔记列表及元数据。
+- **双存储** — 所有笔记接口均接受 `?storage=kv|blob` 查询参数（默认 `kv`）。KV 读写已绑定的 `notesKV` 命名空间；Blob 使用 `@edgeone/pages-blob` SDK，store 名为 `notes`，采用强一致性。两套后端数据互不干扰，前端切换开关即在两套独立数据集间切换，当前后端持久化在 `localStorage`（`syncnote_storage`）。
+- **KV 存储** — 每篇笔记以 UUID 为键存储为 JSON，`notes_index` 键维护笔记列表及元数据。
 - **自动保存冲突处理** — 远端有更新时，若本地仍有待保存的修改，以本地版本为准（下次自动保存会覆盖远端）。
 - **笔记大小限制** — 单篇笔记上限 25 MB（含 base64 编码图片），编辑器底部实时显示已用大小。
 

@@ -5,9 +5,9 @@ import {
   WS_RECONNECT_MAX_MS,
   POLL_INTERVAL_MS,
   POLL_INTERVAL_WS_MS,
-  API_BASE,
+  notesApiUrl,
 } from "~/lib/types";
-import type { Note, NoteIndex, NoteImage, AutoSaveStatus } from "~/lib/types";
+import type { Note, NoteIndex, NoteImage, AutoSaveStatus, StorageType } from "~/lib/types";
 
 interface UseSyncOptions {
   selectedNoteRef: React.RefObject<Note | null>;
@@ -18,6 +18,7 @@ interface UseSyncOptions {
   editImagesRef: React.RefObject<NoteImage[]>;
   autoSaveTimerRef: React.RefObject<ReturnType<typeof setTimeout> | null>;
   autoSaveStatusRef: React.RefObject<AutoSaveStatus>;
+  storageRef: React.MutableRefObject<StorageType>;
   lastSavedRef: React.RefObject<{ title: string; content: string; images: NoteImage[] } | null>;
   setNotesList: React.Dispatch<React.SetStateAction<NoteIndex[]>>;
   setSelectedNote: (note: Note | null) => void;
@@ -38,6 +39,7 @@ export function useSync({
   editImagesRef,
   autoSaveTimerRef,
   autoSaveStatusRef,
+  storageRef,
   lastSavedRef,
   setNotesList,
   setSelectedNote,
@@ -102,7 +104,7 @@ export function useSync({
 
   const poll = useCallback(async () => {
     try {
-      const res = await fetch(API_BASE);
+      const res = await fetch(notesApiUrl(storageRef.current));
       if (!res.ok) return;
       const data: NoteIndex[] = await res.json();
       setNotesList(data);
@@ -114,7 +116,7 @@ export function useSync({
       if (!remoteEntry) return;
       if (remoteEntry.updatedAt === currentNote.updatedAt) return;
 
-      const noteRes = await fetch(`${API_BASE}/${currentNote.id}`);
+      const noteRes = await fetch(notesApiUrl(storageRef.current, currentNote.id));
       if (!noteRes.ok) return;
       const updated: Note = await noteRes.json();
 
@@ -132,7 +134,7 @@ export function useSync({
 
       applyRemoteNote(updated);
     } catch {}
-  }, [selectedNoteRef, autoSaveTimerRef, autoSaveStatusRef, setNotesList, applyRemoteNote, tryApplyPendingRemote]);
+  }, [selectedNoteRef, autoSaveTimerRef, autoSaveStatusRef, storageRef, setNotesList, applyRemoteNote, tryApplyPendingRemote]);
 
   useEffect(() => {
     pollFnRef.current = poll;

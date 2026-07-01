@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { PlusCircle, FileText, AlertTriangle, X } from "lucide-react";
 import { cn } from "~/lib/utils";
-import type { Note, NoteIndex, NoteImage, AutoSaveStatus } from "~/lib/types";
-import { API_BASE, MAX_NOTE_BYTES } from "~/lib/types";
+import type { Note, NoteIndex, NoteImage, AutoSaveStatus, StorageType } from "~/lib/types";
+import { MAX_NOTE_BYTES, notesApiUrl, STORAGE_API, storageApiUrl } from "~/lib/types";
 import { getTranslations, isAuthValid, clearAuth, isImageAttachment } from "~/lib/i18n";
 import type { Lang, Translations } from "~/lib/i18n";
-import { useTheme, useLang } from "~/hooks/useThemeLang";
+import { useTheme, useLang, useStorage } from "~/hooks/useThemeLang";
 import { useStateRef } from "~/hooks/useStateRef";
 import { useAutoSave } from "~/hooks/useAutoSave";
 import { useSync } from "~/hooks/useSync";
@@ -27,6 +27,7 @@ export default function NotesPage() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const { lang, toggleLang } = useLang();
   const { theme, toggleTheme } = useTheme();
+  const { storage, setStorage } = useStorage();
 
   useEffect(() => {
     setIsAuthenticated(isAuthValid());
@@ -56,6 +57,8 @@ export default function NotesPage() {
       toggleLang={toggleLang}
       theme={theme}
       toggleTheme={toggleTheme}
+      storage={storage}
+      setStorage={setStorage}
       onLogout={() => { clearAuth(); setIsAuthenticated(false); }}
     />
   );
@@ -68,9 +71,11 @@ interface NotesAppProps {
   toggleLang: () => void;
   theme: "light" | "dark";
   toggleTheme: () => void;
+  storage: StorageType;
+  setStorage: (next: StorageType) => void;
 }
 
-function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAppProps) {
+function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme, storage, setStorage }: NotesAppProps) {
   const [notesList, setNotesList] = useState<NoteIndex[]>([]);
   const [selectedNote, setSelectedNote, selectedNoteRef] = useStateRef<Note | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -96,6 +101,9 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
 
   const tRef = useRef(t);
   useEffect(() => { tRef.current = t; }, [t]);
+
+  const storageRef = useRef<StorageType>(storage);
+  useEffect(() => { storageRef.current = storage; }, [storage]);
 
   const hasAutoOpenedLastEditedRef = useRef(false);
 
@@ -126,6 +134,7 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
     editImagesRef,
     autoSaveTimerRef,
     autoSaveStatusRef,
+    storageRef,
     lastSavedRef,
     setNotesList,
     setSelectedNote,
@@ -144,6 +153,7 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
     editImagesRef,
     isCreatingRef,
     autoSaveStatusRef,
+    storageRef,
     isOverLimit,
     setAutoSaveStatus,
     setSelectedNote,
@@ -206,7 +216,7 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch(API_BASE);
+      const res = await fetch(notesApiUrl(storageRef.current));
       if (!res.ok) throw new Error("failed");
       const data: NoteIndex[] = await res.json();
       setNotesList(data);
@@ -215,7 +225,7 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [storageRef]);
 
   useEffect(() => { loadNotes(); }, [loadNotes]);
 
@@ -227,7 +237,7 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
     setRemoteSyncStatus("idle");
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/${id}`);
+      const res = await fetch(notesApiUrl(storageRef.current, id));
       if (!res.ok) throw new Error("failed");
       const note: Note = await res.json();
       setSelectedNote(note);
@@ -245,7 +255,7 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
     } catch {
       setError(tRef.current.loadNoteError);
     }
-  }, [clearAutoSaveTimer, setAutoSaveStatus, setSelectedNote, setEditTitle, setEditContent, setEditImages, lastSavedRef, subscribeNote]);
+  }, [clearAutoSaveTimer, storageRef, setAutoSaveStatus, setSelectedNote, setEditTitle, setEditContent, setEditImages, lastSavedRef, subscribeNote]);
 
   useEffect(() => {
     if (hasAutoOpenedLastEditedRef.current) return;
@@ -307,7 +317,7 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
     setError(null);
     try {
       if (isCreatingRef.current) {
-        const res = await fetch(API_BASE, {
+        const res = await fetch(notesApiUrl(storageRef.current), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ title: editTitleRef.current, content: editContentRef.current, images: editImagesRef.current }),
@@ -325,7 +335,7 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
         setAutoSaveStatus("idle");
         await loadNotes();
       } else if (selectedNoteRef.current) {
-        const res = await fetch(`${API_BASE}/${selectedNoteRef.current.id}`, {
+        const res = await fetch(notesApiUrl(storageRef.current, selectedNoteRef.current.id), {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ title: editTitleRef.current, content: editContentRef.current, images: editImagesRef.current }),
@@ -346,7 +356,7 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
     } finally {
       setIsSaving(false);
     }
-  }, [clearAutoSaveTimer, setAutoSaveStatus, setSelectedNote, isOverLimit, loadNotes, notifyNoteUpdated]);
+  }, [clearAutoSaveTimer, storageRef, setAutoSaveStatus, setSelectedNote, isOverLimit, loadNotes, notifyNoteUpdated]);
 
   const handleSaveRef = useRef(handleSave);
   handleSaveRef.current = handleSave;
@@ -371,7 +381,7 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
     setIsDeleting(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/${selectedNote.id}`, { method: "DELETE" });
+      const res = await fetch(notesApiUrl(storageRef.current, selectedNote.id), { method: "DELETE" });
       if (!res.ok) throw new Error("failed");
       setSelectedNote(null);
       setIsEditing(false);
@@ -386,7 +396,42 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
     } finally {
       setIsDeleting(false);
     }
-  }, [selectedNote, t, clearAutoSaveTimer, setSelectedNote, setEditImages, setAutoSaveStatus, loadNotes]);
+  }, [selectedNote, storageRef, t, clearAutoSaveTimer, setSelectedNote, setEditImages, setAutoSaveStatus, loadNotes]);
+
+  const handleStorageChange = useCallback(async (next: StorageType) => {
+    if (next === storageRef.current) return;
+    clearAutoSaveTimer();
+    setError(null);
+    // Probe the target backend before committing to the switch.
+    try {
+      const res = await fetch(storageApiUrl(STORAGE_API, next));
+      const data: { available?: boolean; error?: string } = await res.json().catch(() => ({}));
+      if (!data.available) {
+        setError(tRef.current.storageUnavailable(next));
+        return;
+      }
+    } catch {
+      setError(tRef.current.storageUnavailable(next));
+      return;
+    }
+    setStorage(next);
+    storageRef.current = next;
+    // Reset the editor/list state for the new, independent dataset.
+    setSelectedNote(null);
+    setIsEditing(false);
+    setIsCreating(false);
+    isCreatingRef.current = false;
+    setEditTitle("");
+    setEditContent("");
+    setEditImages([]);
+    setAutoSaveStatus("idle");
+    setRemoteSyncStatus("idle");
+    setMobileShowEditor(false);
+    lastSavedRef.current = null;
+    hasAutoOpenedLastEditedRef.current = false;
+    setNotesList([]);
+    await loadNotes();
+  }, [clearAutoSaveTimer, setStorage, setSelectedNote, setEditTitle, setEditContent, setEditImages, setAutoSaveStatus, loadNotes]);
 
   const handleFiles = useCallback((files: FileList | File[]) => {
     Array.from(files).forEach((file) => {
@@ -504,8 +549,10 @@ function NotesApp({ onLogout, t, lang, toggleLang, theme, toggleTheme }: NotesAp
         t={t}
         lang={lang}
         theme={theme}
+        storage={storage}
         toggleLang={toggleLang}
         toggleTheme={toggleTheme}
+        onStorageChange={handleStorageChange}
         onLogout={onLogout}
         onNewNote={handleNewNote}
         onSelectNote={handleSelectNote}

@@ -9,6 +9,7 @@ A lightweight, password-protected note-taking app with real-time cross-device sy
 ## ✨ Features
 
 - **Password protection** — Single shared password guards all notes; session persists for 30 days
+- **Dual storage backends** — Switch between **EdgeOne KV** and **EdgeOne Pages Blob** from the sidebar toggle; the two datasets are fully independent
 - **Real-time sync** — Notes sync instantly across devices via WebSocket push + HTTP polling fallback
 - **Auto-save** — Changes are saved automatically 800 ms after you stop typing
 - **Image attachments** — Attach images by clicking, dragging, or **pasting** (supports screenshots)
@@ -28,7 +29,7 @@ A lightweight, password-protected note-taking app with real-time cross-device sy
 | Styling | Tailwind CSS v4 |
 | Icons | Lucide React |
 | Build | Vite |
-| Storage | EdgeOne KV |
+| Storage | EdgeOne KV + EdgeOne Pages Blob (`@edgeone/pages-blob`) |
 | Runtime | EdgeOne Pages Functions (Edge + Node.js) |
 | Real-time | WebSocket (node-functions/sync.js) + polling |
 
@@ -75,8 +76,10 @@ app/
 edge-functions/
 ├── api/
 │   ├── auth.js            # POST /api/auth — password verification
-│   ├── notes.js           # GET / POST /api/notes
-│   └── notes/[id].js      # GET / PUT / DELETE /api/notes/:id
+│   ├── notes.js           # GET / POST /api/notes        (?storage=kv|blob)
+│   ├── notes/[id].js      # GET / PUT / DELETE /api/notes/:id (?storage=kv|blob)
+│   ├── storage.js         # GET /api/storage — backend availability check
+│   └── upload-url.js      # POST /api/upload-url — presigned Blob upload URL
 node-functions/
 └── sync.js                # WebSocket server for real-time sync
 public/                    # Static assets
@@ -84,7 +87,8 @@ public/                    # Static assets
 
 ## 🔧 Architecture Notes
 
-- **KV storage** — Each note is stored as a JSON value under its UUID key. An index key (`__index`) holds the list of note IDs and metadata.
+- **Dual storage** — Every notes endpoint accepts a `?storage=kv|blob` query parameter (defaults to `kv`). KV reads/writes the bound `notesKV` namespace; Blob uses the `@edgeone/pages-blob` SDK with a store named `notes` and strong consistency. The two backends share no data, so toggling in the UI switches between independent datasets. The frontend persists the active backend in `localStorage` (`syncnote_storage`).
+- **KV storage** — Each note is stored as a JSON value under its UUID key. An index key (`notes_index`) holds the list of note IDs and metadata.
 - **Auto-save conflict resolution** — If a remote update arrives while the user has pending local changes, the local version wins (the next auto-save will overwrite the remote).
 - **Note size limit** — 25 MB per note (including base64-encoded images). A size indicator is shown in the editor.
 

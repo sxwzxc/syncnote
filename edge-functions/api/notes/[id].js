@@ -1,28 +1,41 @@
-import { jsonResponse, handleOptions, requireKV, errorResponse, MAX_NOTE_BYTES, updateIndex, removeFromIndex } from '../../_shared.js';
+import {
+  jsonResponse,
+  handleOptions,
+  requireStorage,
+  errorResponse,
+  MAX_NOTE_BYTES,
+  updateIndex,
+  removeFromIndex,
+  getStorageParam,
+  getAdapter,
+} from '../../_shared.js';
 
 export async function onRequestOptions() {
   return handleOptions();
 }
 
-export async function onRequestGet({ params }) {
-  const kvError = requireKV();
-  if (kvError) return kvError;
+export async function onRequestGet({ request, params }) {
+  const backend = getStorageParam(request);
+  const storageError = requireStorage(backend);
+  if (storageError) return storageError;
 
   const { id } = params;
   try {
-    const raw = await notesKV.get(`note_${id}`);
-    if (!raw) {
+    const adapter = getAdapter(backend);
+    const note = await adapter.getJSON(`note_${id}`);
+    if (!note) {
       return jsonResponse({ error: 'Note not found' }, 404);
     }
-    return jsonResponse(JSON.parse(raw));
+    return jsonResponse(note);
   } catch (err) {
     return errorResponse(err);
   }
 }
 
 export async function onRequestPut({ request, params }) {
-  const kvError = requireKV();
-  if (kvError) return kvError;
+  const backend = getStorageParam(request);
+  const storageError = requireStorage(backend);
+  if (storageError) return storageError;
 
   const { id } = params;
 
@@ -34,12 +47,11 @@ export async function onRequestPut({ request, params }) {
   }
 
   try {
-    const raw = await notesKV.get(`note_${id}`);
-    if (!raw) {
+    const adapter = getAdapter(backend);
+    const existing = await adapter.getJSON(`note_${id}`);
+    if (!existing) {
       return jsonResponse({ error: 'Note not found' }, 404);
     }
-
-    const existing = JSON.parse(raw);
 
     if (body.updatedAt && body.updatedAt !== existing.updatedAt) {
       return jsonResponse({ error: 'Conflict: note has been modified by another client. Please refresh and try again.' }, 409);
@@ -58,11 +70,11 @@ export async function onRequestPut({ request, params }) {
 
     const updatedJson = JSON.stringify(updated);
     if (new TextEncoder().encode(updatedJson).byteLength > MAX_NOTE_BYTES) {
-      return jsonResponse({ error: 'Note size exceeds the 25 MB KV storage limit.' }, 413);
+      return jsonResponse({ error: 'Note size exceeds the 25 MB storage limit.' }, 413);
     }
 
-    await notesKV.put(`note_${id}`, updatedJson);
-    await updateIndex(id, title, now);
+    await adapter.putJSON(`note_${id}`, updated);
+    await updateIndex(adapter, id, title, now);
 
     return jsonResponse(updated);
   } catch (err) {
@@ -70,19 +82,21 @@ export async function onRequestPut({ request, params }) {
   }
 }
 
-export async function onRequestDelete({ params }) {
-  const kvError = requireKV();
-  if (kvError) return kvError;
+export async function onRequestDelete({ request, params }) {
+  const backend = getStorageParam(request);
+  const storageError = requireStorage(backend);
+  if (storageError) return storageError;
 
   const { id } = params;
   try {
-    const raw = await notesKV.get(`note_${id}`);
-    if (!raw) {
+    const adapter = getAdapter(backend);
+    const existing = await adapter.getJSON(`note_${id}`);
+    if (!existing) {
       return jsonResponse({ error: 'Note not found' }, 404);
     }
 
-    await notesKV.delete(`note_${id}`);
-    await removeFromIndex(id);
+    await adapter.delete(`note_${id}`);
+    await removeFromIndex(adapter, id);
 
     return jsonResponse({ success: true });
   } catch (err) {
