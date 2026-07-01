@@ -24,15 +24,30 @@ function patchEdgeOneMeta() {
     apply: "build" as const,
     enforce: "post" as const,
     closeBundle() {
-      try {
-        const p = ".edgeone/meta.json";
-        if (!fs.existsSync(p)) return;
-        const meta = JSON.parse(fs.readFileSync(p, "utf8"));
-        if (meta?.conf) meta.conf.ssr404 = false;
-        fs.writeFileSync(p, JSON.stringify(meta, null, 2) + "\n");
-        console.log("[patch-edgeone-meta] set conf.ssr404=false");
-      } catch (e) {
-        console.warn("[patch-edgeone-meta] skipped:", (e as Error).message);
+      // The EdgeOne adapter writes meta.json to TWO locations:
+      //   .edgeone/meta.json            (root)
+      //   .edgeone/server-handler/meta.json  (next to the SSR handler)
+      // The runtime reads the server-handler copy, so BOTH must be patched.
+      const targets = [
+        ".edgeone/meta.json",
+        ".edgeone/server-handler/meta.json",
+      ];
+      let patched = 0;
+      for (const p of targets) {
+        try {
+          if (!fs.existsSync(p)) continue;
+          const meta = JSON.parse(fs.readFileSync(p, "utf8"));
+          if (meta?.conf) {
+            meta.conf.ssr404 = false;
+            fs.writeFileSync(p, JSON.stringify(meta, null, 2) + "\n");
+            patched++;
+          }
+        } catch (e) {
+          console.warn(`[patch-edgeone-meta] skipped ${p}:`, (e as Error).message);
+        }
+      }
+      if (patched > 0) {
+        console.log(`[patch-edgeone-meta] set conf.ssr404=false in ${patched} file(s)`);
       }
     },
   };
